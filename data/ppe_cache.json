@@ -61,5 +61,15 @@
       "Eye Protection"
     ],
     "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+  },
+  "A 45-year-old male presents to the emergency department with a productive cough, night sweats, and significant weight loss over the past two months. He reports having recently immigrated from a country with a high incidence of tuberculosis. His chest X-ray shows apical cavitary lesions. He is alert and oriented but appears fatigued and has a persistent cough. You are preparing to enter the room to perform a physical assessment.": {
+    "category": "Airborne",
+    "required": [
+      "Gloves",
+      "Gown",
+      "N95",
+      "Eye Protection"
+    ],
+    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
   }
 }

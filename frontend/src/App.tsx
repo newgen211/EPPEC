@@ -66,6 +66,12 @@ const PPE_OPTIONS = [
   "Face Shield",
 ];
 
+function pickRandomScenario(scenarios: BackendScenario[]): BackendScenario | null {
+  if (scenarios.length === 0) return null;
+  const randomIndex = Math.floor(Math.random() * scenarios.length);
+  return scenarios[randomIndex];
+}
+
 export default function App() {
   const [stage, setStage] = useState<AppStage>("modeSelect");
   const [mode, setMode] = useState<AppMode>(null);
@@ -80,6 +86,7 @@ export default function App() {
   const [result, setResult] = useState<SubmitResult | null>(null);
 
   const [loadingScenarios, setLoadingScenarios] = useState(false);
+  const [generatingScenario, setGeneratingScenario] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -90,56 +97,41 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-  const loadMedicalScenarios = async () => {
-    try {
-      setLoadingScenarios(true);
-      setErrorMessage(null);
+    const loadMedicalScenarios = async () => {
+      try {
+        setLoadingScenarios(true);
+        setErrorMessage(null);
 
-      const scenariosUrl = `${API_BASE_URL}/scenarios`;
-      console.log("API_BASE_URL:", API_BASE_URL);
-      console.log("Loading scenarios from:", scenariosUrl);
+        const scenariosUrl = `${API_BASE_URL}/scenarios`;
+        const response = await fetch(scenariosUrl);
 
-      const response = await fetch(scenariosUrl);
+        const responseText = await response.text();
 
-      console.log("Response URL:", response.url);
-      console.log("Response status:", response.status);
-      console.log("Response content-type:", response.headers.get("content-type"));
+        if (!response.ok) {
+          throw new Error(
+            `Failed to load scenarios: ${response.status} ${responseText}`
+          );
+        }
 
-      const responseText = await response.text();
-      console.log("Raw /scenarios response:", responseText);
+        const data: BackendScenario[] = JSON.parse(responseText);
+        setMedicalScenarios(data);
+      } catch (error) {
+        console.error(error);
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to load scenarios: ${response.status} ${responseText}`
-        );
+        const message =
+          error instanceof Error
+            ? `${error.message} — using fallback medical scenarios.`
+            : "Failed to load medical scenarios from the backend — using fallback medical scenarios.";
+
+        setErrorMessage(message);
+        setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
+      } finally {
+        setLoadingScenarios(false);
       }
+    };
 
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error(
-          `Expected JSON but got ${contentType}. Response started with: ${responseText.slice(0, 120)}`
-        );
-      }
-
-      const data: BackendScenario[] = JSON.parse(responseText);
-      setMedicalScenarios(data);
-    } catch (error) {
-      console.error(error);
-
-      const message =
-        error instanceof Error
-          ? `${error.message} — using fallback medical scenarios.`
-          : "Failed to load medical scenarios from the backend — using fallback medical scenarios.";
-
-      setErrorMessage(message);
-      setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
-    } finally {
-      setLoadingScenarios(false);
-    }
-  };
-
-  loadMedicalScenarios();
-}, []);
+    loadMedicalScenarios();
+  }, []);
 
   useEffect(() => {
     if (!uploadedImage) {
@@ -202,10 +194,49 @@ export default function App() {
     if (selectedMode === "hurricane") {
       setSelectedScenario(HURRICANE_SCENARIO);
     } else {
-      setSelectedScenario(medicalScenarios[0] ?? null);
+      setSelectedScenario(pickRandomScenario(medicalScenarios));
     }
 
     setStage("scenario");
+  };
+
+  const handleRandomMedicalScenario = () => {
+    setSelectedScenario(pickRandomScenario(medicalScenarios));
+    setSelectedPPE([]);
+    setResult(null);
+    setErrorMessage(null);
+  };
+
+  const handleGenerateAiScenario = async () => {
+    try {
+      setGeneratingScenario(true);
+      setErrorMessage(null);
+
+      const response = await fetch(`${API_BASE_URL}/scenarios/generate`);
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to generate AI scenario: ${response.status} ${responseText}`
+        );
+      }
+
+      const data: BackendScenario = JSON.parse(responseText);
+      setSelectedScenario(data);
+      setSelectedPPE([]);
+      setResult(null);
+    } catch (error) {
+      console.error(error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to generate AI scenario.";
+
+      setErrorMessage(message);
+    } finally {
+      setGeneratingScenario(false);
+    }
   };
 
   const handleRestart = () => {
@@ -292,7 +323,6 @@ export default function App() {
       setErrorMessage(null);
 
       const submitUrl = `${API_BASE_URL}/submit`;
-      console.log("Submitting to:", submitUrl);
 
       const response = await fetch(submitUrl, {
         method: "POST",
@@ -342,6 +372,7 @@ export default function App() {
               Select which PPE workflow you want to test.
             </p>
 
+
             {loadingScenarios && (
               <div className="mb-4 rounded-lg bg-blue-50 px-4 py-3 text-blue-700">
                 Loading medical scenarios...
@@ -379,7 +410,7 @@ export default function App() {
               >
                 <div className="mb-2 text-lg font-semibold">Medical PPE</div>
                 <p className="text-sm text-gray-600">
-                  Test clinical PPE selection using backend-loaded scenarios.
+                  Randomly picks one backend-loaded medical scenario.
                 </p>
               </button>
             </div>
@@ -396,31 +427,36 @@ export default function App() {
 
             <h2 className="mb-3 text-2xl font-semibold">Scenario</h2>
 
-            {mode === "medical" && medicalScenarios.length > 0 && (
-              <div className="mb-4">
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Choose a medical scenario
-                </label>
-                <select
-                  value={selectedScenario.id}
-                  onChange={(e) => {
-                    const id = Number(e.target.value);
-                    const found =
-                      medicalScenarios.find((s) => s.id === id) ?? null;
-                    setSelectedScenario(found);
-                  }}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
+            <p className="mb-4 leading-7">{selectedScenario.text}</p>
+
+            {mode === "medical" && (
+              <div className="mb-6 flex flex-wrap gap-3">
+                <button
+                  onClick={handleRandomMedicalScenario}
+                  className="rounded-xl border border-gray-300 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-100"
                 >
-                  {medicalScenarios.map((scenario) => (
-                    <option key={scenario.id} value={scenario.id}>
-                      {scenario.text}
-                    </option>
-                  ))}
-                </select>
+                  Random Scenario
+                </button>
+
+                <button
+                  onClick={handleGenerateAiScenario}
+                  disabled={generatingScenario}
+                  className={`rounded-xl px-4 py-2 font-medium text-white transition ${
+                    generatingScenario
+                      ? "cursor-not-allowed bg-gray-400"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }`}
+                >
+                  {generatingScenario ? "Generating..." : "Generate AI Scenario"}
+                </button>
               </div>
             )}
 
-            <p className="leading-7">{selectedScenario.text}</p>
+            {errorMessage && (
+              <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-red-700">
+                {errorMessage}
+              </div>
+            )}
 
             <div className="mt-6 flex gap-3">
               <button
