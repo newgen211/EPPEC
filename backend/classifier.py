@@ -70,44 +70,53 @@ def classify(text: str) -> dict:
 
 # ──Generate new scenario with Gemini─────────────────────────────────
 def generate_scenario() -> dict:
+    import random
     prompt = (
-        "You are a medical training scenario generator. "
-        "Generate a single realistic clinical scenario that requires a specific PPE level. "
-        f"The scenario must clearly map to one of these categories: {', '.join(CATEGORIES)}.\n\n"
-        "Respond with JSON only in this exact format, no markdown, no extra text:\n"
-        '{"text": "the scenario here", "category": "the category here"}'
-    )
-
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
-
-    raw = response.text.strip()
-
+    "You are a medical training scenario generator for healthcare professionals. "
+    "Generate a single, realistic, and clinically accurate scenario that a nurse or doctor might encounter. "
+    "The scenario must clearly require a specific level of PPE based on infection control guidelines.\n\n"
+    f"You must assign it to exactly one of these categories: {', '.join(CATEGORIES)}.\n\n"
+    "Guidelines per category:\n"
+    "- Standard: routine, low-risk procedures with no infection concern\n"
+    "- Droplet: pathogens spread via respiratory droplets (flu, COVID, pertussis)\n"
+    "- Contact: pathogens spread via direct skin or surface contact (C. diff, MRSA)\n"
+    "- Airborne: pathogens spread via airborne particles (TB, measles, chickenpox)\n"
+    "- High-Risk: emergency procedures with high aerosolization or splash risk\n\n"
+    "Rules:\n"
+    "- The scenario must be 1-2 sentences, written as a clinical briefing\n"
+    "- Do not mention PPE in the scenario text\n"
+    "- Do not repeat these example scenarios: routine blood draw, suspected flu, C. diff, TB, emergency intubation\n"
+    "- Vary the setting: ER, ICU, clinic, ambulance, isolation ward, operating room\n\n"
+    "Respond with JSON only. No markdown, no extra text, no explanation:\n"
+    '{"text": "scenario here", "category": "category here"}'
+)
     try:
-        data = json.loads(raw)
-        category = data["category"]
-        if category not in PPE_RULES:
-            category = "Standard"
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+        data = json.loads(response.text.strip())
+        category = data["category"] if data["category"] in PPE_RULES else "Standard"
         return {
-            "id": 0,  # 0 = AI generated
-            "text": data["text"],
-            "category": category,
-            "required": get_required(category),
+            "id":          0,
+            "text":        data["text"],
+            "category":    category,
+            "required":    get_required(category),
             "explanation": get_explanation(category),
-            "generated": True,
+            "generated":   True,
         }
     except Exception as e:
-        print(f"[warning] failed to parse generated scenario: {e}")
-        # fallback to demo scenario if generation fails
+        print(f"[warning] Gemini generation failed: {e}")
+        print("[fallback] returning random hardcoded scenario")
+        scenario = random.choice(SCENARIOS)
+        category = scenario["category"]
         return {
-            "id": 0,
-            "text": "A patient under airborne isolation precautions requires assessment.",
-            "category": "Airborne",
-            "required": get_required("Airborne"),
-            "explanation": get_explanation("Airborne"),
-            "generated": True,
+            "id":          scenario["id"],
+            "text":        scenario["text"],
+            "category":    category,
+            "required":    get_required(category),
+            "explanation": get_explanation(category),
+            "generated":   False,
         }
 
 # ── Warm cache on startup ─────────────────────────────────

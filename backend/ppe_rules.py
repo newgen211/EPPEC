@@ -47,13 +47,26 @@ PPE_RULES: dict[str, PPERule] = {
         ),
     },
 }
+
+CATEGORIES = list(PPE_RULES.keys())
+
+# ── Helpers ───────────────────────────────────────────────
+
+def get_required(category: str) -> list[str]:
+    return PPE_RULES[category]["required"]
+
+def get_explanation(category: str) -> str:
+    return PPE_RULES[category]["explanation"]
+
+# ── Grader ────────────────────────────────────────────────
+
 def grade(required: list[str], selected: list[str]) -> dict:
     required_set = set(required)
     selected_set = set(selected)
 
-    correct  = list(required_set & selected_set)        # in both
-    missing  = list(required_set - selected_set)        # needed but not selected
-    extra    = list(selected_set - required_set)        # selected but not needed
+    correct = list(required_set & selected_set)   # in both
+    missing = list(required_set - selected_set)   # needed but not selected
+    extra   = list(selected_set - required_set)   # selected but not needed
 
     if not missing and not extra:
         outcome = "correct"
@@ -65,15 +78,8 @@ def grade(required: list[str], selected: list[str]) -> dict:
         outcome = "incorrect"
 
     return {
-        "outcome":  outcome,
-        "correct":  correct,
-        "missing":  missing,
-        "extra":    extra,
+        "outcome": outcome,
+        "correct": correct,
+        "missing": missing,
+        "extra":   extra,
     }
-CATEGORIES = list(PPE_RULES.keys())
-
-def get_required(category: str) -> list[str]:
-    return PPE_RULES[category]["required"]
-
-def get_explanation(category: str) -> str:
-    return PPE_RULES[category]["explanation"]
