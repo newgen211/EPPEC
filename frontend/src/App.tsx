@@ -21,13 +21,41 @@ type SubmitResult = {
   explanation: string;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = "http://localhost:8000";
 
 const HURRICANE_SCENARIO: BackendScenario = {
   id: 1000,
   text: "A responder is entering a flood-damaged area with contaminated standing water, debris, unstable surfaces, and possible exposure to mold and sharp objects.",
   category: "Flood Response",
 };
+
+const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
+  {
+    id: 1,
+    text: "Routine blood draw on a stable patient.",
+    category: "Standard",
+  },
+  {
+    id: 2,
+    text: "Patient presenting with fever and productive cough — suspected influenza.",
+    category: "Droplet",
+  },
+  {
+    id: 3,
+    text: "Entering an isolation room for a patient with C. diff infection.",
+    category: "Contact",
+  },
+  {
+    id: 4,
+    text: "Suspected tuberculosis — patient has persistent cough and night sweats.",
+    category: "Airborne",
+  },
+  {
+    id: 5,
+    text: "Emergency intubation on an unknown-status patient with high aerosolization risk.",
+    category: "High-Risk",
+  },
+];
 
 const PPE_OPTIONS = [
   "Gloves",
@@ -62,28 +90,56 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    const loadMedicalScenarios = async () => {
-      try {
-        setLoadingScenarios(true);
-        setErrorMessage(null);
+  const loadMedicalScenarios = async () => {
+    try {
+      setLoadingScenarios(true);
+      setErrorMessage(null);
 
-        const response = await fetch(`${API_BASE_URL}/scenarios`);
-        if (!response.ok) {
-          throw new Error(`Failed to load scenarios: ${response.status}`);
-        }
+      const scenariosUrl = `${API_BASE_URL}/scenarios`;
+      console.log("API_BASE_URL:", API_BASE_URL);
+      console.log("Loading scenarios from:", scenariosUrl);
 
-        const data: BackendScenario[] = await response.json();
-        setMedicalScenarios(data);
-      } catch (error) {
-        console.error(error);
-        setErrorMessage("Failed to load medical scenarios from the backend.");
-      } finally {
-        setLoadingScenarios(false);
+      const response = await fetch(scenariosUrl);
+
+      console.log("Response URL:", response.url);
+      console.log("Response status:", response.status);
+      console.log("Response content-type:", response.headers.get("content-type"));
+
+      const responseText = await response.text();
+      console.log("Raw /scenarios response:", responseText);
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to load scenarios: ${response.status} ${responseText}`
+        );
       }
-    };
 
-    loadMedicalScenarios();
-  }, []);
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `Expected JSON but got ${contentType}. Response started with: ${responseText.slice(0, 120)}`
+        );
+      }
+
+      const data: BackendScenario[] = JSON.parse(responseText);
+      setMedicalScenarios(data);
+    } catch (error) {
+      console.error(error);
+
+      const message =
+        error instanceof Error
+          ? `${error.message} — using fallback medical scenarios.`
+          : "Failed to load medical scenarios from the backend — using fallback medical scenarios.";
+
+      setErrorMessage(message);
+      setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
+    } finally {
+      setLoadingScenarios(false);
+    }
+  };
+
+  loadMedicalScenarios();
+}, []);
 
   useEffect(() => {
     if (!uploadedImage) {
@@ -225,6 +281,7 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (!selectedScenario) return;
+
     if (selectedPPE.length === 0) {
       setErrorMessage("Please select at least one PPE item before submitting.");
       return;
@@ -234,7 +291,10 @@ export default function App() {
       setSubmitting(true);
       setErrorMessage(null);
 
-      const response = await fetch(`${API_BASE_URL}/submit`, {
+      const submitUrl = `${API_BASE_URL}/submit`;
+      console.log("Submitting to:", submitUrl);
+
+      const response = await fetch(submitUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -242,11 +302,15 @@ export default function App() {
         body: JSON.stringify({
           scenario_text: selectedScenario.text,
           selected: selectedPPE,
+          mode,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Submit failed with status ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(
+          `Submit failed with status ${response.status}: ${errorText}`
+        );
       }
 
       const data: SubmitResult = await response.json();
@@ -254,7 +318,13 @@ export default function App() {
       setStage("results");
     } catch (error) {
       console.error(error);
-      setErrorMessage("Failed to submit PPE selection to the backend.");
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to submit PPE selection to the backend.";
+
+      setErrorMessage(message);
     } finally {
       setSubmitting(false);
     }
@@ -271,6 +341,21 @@ export default function App() {
             <p className="mb-6 text-gray-600">
               Select which PPE workflow you want to test.
             </p>
+
+            <div className="mb-4 rounded-lg bg-gray-100 px-4 py-3 text-sm text-gray-700">
+              <div>
+                <span className="font-semibold">Frontend URL:</span>{" "}
+                http://localhost:5173
+              </div>
+              <div>
+                <span className="font-semibold">Backend URL:</span>{" "}
+                {API_BASE_URL || "Missing VITE_API_BASE_URL"}
+              </div>
+              <div>
+                <span className="font-semibold">Medical scenarios loaded:</span>{" "}
+                {medicalScenarios.length}
+              </div>
+            </div>
 
             {loadingScenarios && (
               <div className="mb-4 rounded-lg bg-blue-50 px-4 py-3 text-blue-700">
