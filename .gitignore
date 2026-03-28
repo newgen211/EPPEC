@@ -8,8 +8,6 @@ venv/
 frontend/node_modules/
 frontend/dist/
 
-# YOLO weights
-models/*.pt
 
 # Env
 .env
@@ -17,3 +15,4 @@ models/*.pt
 # OS
 .DS_Store
 Thumbs.db
+context_dump/
