@@ -14,9 +14,6 @@ models/*.pt
 # Env
 .env
 
-# Cache
-data/ppe_cache.json
-
 # OS
 .DS_Store
 Thumbs.db

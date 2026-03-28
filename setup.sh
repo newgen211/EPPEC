@@ -9,7 +9,7 @@ mkdir -p models
 mkdir -p data
 
 # ═════════════════════════════════════════════════════════
-# FRONTEND CONFIG (needed to actually run)
+# FRONTEND CONFIG
 # ═════════════════════════════════════════════════════════
 
 cat > frontend/package.json << 'EOF'
@@ -57,6 +57,19 @@ cat > frontend/tsconfig.json << 'EOF'
 }
 EOF
 
+cat > frontend/tsconfig.node.json << 'EOF'
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+EOF
+
 cat > frontend/vite.config.ts << 'EOF'
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
@@ -82,11 +95,19 @@ cat > frontend/index.html << 'EOF'
 </html>
 EOF
 
-# Minimum needed for React to mount — empty beyond this
+cat > frontend/src/styles.css << 'EOF'
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+EOF
+
 cat > frontend/src/main.tsx << 'EOF'
 import React from "react"
 import ReactDOM from "react-dom/client"
 import App from "./App"
+import "./styles.css"
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -102,7 +123,7 @@ export default function App() {
 }
 EOF
 
-# ── EMPTY FILES ───────────────────────────────────────────
+# ── EMPTY STUBS ───────────────────────────────────────────
 
 touch frontend/src/types/index.ts
 touch frontend/src/api.ts
@@ -128,7 +149,25 @@ Pillow
 numpy
 EOF
 
-touch backend/main.py
+cat > backend/main.py << 'EOF'
+# File: backend/main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="EPPEC API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def root():
+    return {"ok": True, "message": "EPPEC backend running"}
+EOF
+
 touch backend/classifier.py
 touch backend/detector.py
 touch backend/ppe_rules.py
@@ -138,7 +177,6 @@ touch backend/scenarios.py
 # DATA
 # ═════════════════════════════════════════════════════════
 
-echo "{}" > data/ppe_cache.json
 echo "[]" > data/scenarios.json
 echo "# Drop ppe_best.pt here" > models/README.md
 
@@ -146,7 +184,7 @@ echo "# Drop ppe_best.pt here" > models/README.md
 # ROOT
 # ═════════════════════════════════════════════════════════
 
-cat > .env << 'EOF'
+cat > .env.example << 'EOF'
 OPENAI_API_KEY=your-key-here
 CONFIDENCE_THRESHOLD=0.6
 VITE_API_URL=http://localhost:8000
@@ -169,22 +207,46 @@ models/*.pt
 # Env
 .env
 
-# Cache
-data/ppe_cache.json
-
 # OS
 .DS_Store
 Thumbs.db
 EOF
 
+cat > README.md << 'EOF'
+# EPPEC — PPE Scenario Classifier
+
+## Setup
+
+### 1. Environment
+```bash
+cp .env.example .env
+# then fill in your OPENAI_API_KEY
+```
+
+### 2. Backend
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### 3. Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+EOF
+
 # ── PUSH ─────────────────────────────────────────────────
 
 git add .
-git commit -m "scaffold: project structure, config files, empty stubs"
+git commit -m "scaffold: runnable backend stub, React scaffold, .env.example"
 git push
 
 echo ""
 echo "✅ Done."
 echo ""
-echo "  Frontend → cd frontend && npm install && npm run dev"
-echo "  Backend  → cd backend && pip install -r requirements.txt && uvicorn main:app --reload"
+echo "  1. cp .env.example .env  →  fill in your keys"
+echo "  2. Backend  → cd backend  && pip install -r requirements.txt && uvicorn main:app --reload"
+echo "  3. Frontend → cd frontend && npm install && npm run dev"
