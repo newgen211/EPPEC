@@ -342,21 +342,6 @@ export default function App() {
               Select which PPE workflow you want to test.
             </p>
 
-            <div className="mb-4 rounded-lg bg-gray-100 px-4 py-3 text-sm text-gray-700">
-              <div>
-                <span className="font-semibold">Frontend URL:</span>{" "}
-                http://localhost:5173
-              </div>
-              <div>
-                <span className="font-semibold">Backend URL:</span>{" "}
-                {API_BASE_URL || "Missing VITE_API_BASE_URL"}
-              </div>
-              <div>
-                <span className="font-semibold">Medical scenarios loaded:</span>{" "}
-                {medicalScenarios.length}
-              </div>
-            </div>
-
             {loadingScenarios && (
               <div className="mb-4 rounded-lg bg-blue-50 px-4 py-3 text-blue-700">
                 Loading medical scenarios...
