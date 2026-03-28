@@ -1,238 +1,190 @@
-#!/bin/bash
 
-# ── BACKEND ──────────────────────────────────────────────
-
-mkdir -p backend
-
-cat > backend/main.py << 'EOF'
-# File: backend/main.py
-# FastAPI app — defines all API routes (/classify, /detect, /scenarios)
-
-from fastapi import FastAPI
-
-app = FastAPI()
-EOF
-
-cat > backend/classifier.py << 'EOF'
-# File: backend/classifier.py
-# GPT call + pre-classification cache logic
-# Runs all scenarios through GPT on startup and writes ppe_cache.json
-EOF
-
-cat > backend/detector.py << 'EOF'
-# File: backend/detector.py
-# YOLO inference wrapper using ultralytics
-# Accepts a base64 frame, returns list of {label, confidence}
-EOF
-
-cat > backend/ppe_rules.py << 'EOF'
-# File: backend/ppe_rules.py
-# Single source of truth: PPE category → required items
-
-PPE_RULES = {
-    "Standard":  {"Gloves"},
-    "Droplet":   {"Gloves", "Gown", "Surgical Mask", "Eye Protection"},
-    "Contact":   {"Gloves", "Gown"},
-    "Airborne":  {"Gloves", "Gown", "N95", "Eye Protection"},
-    "High-Risk": {"Gloves", "Gown", "N95", "Face Shield", "Eye Protection"},
-}
-EOF
-
-cat > backend/scenarios.py << 'EOF'
-# File: backend/scenarios.py
-# Pre-written clinical scenario bank with correct category tags
-
-SCENARIOS = [
-    {"id": 1, "text": "Routine blood draw on a stable patient.", "category": "Standard"},
-    {"id": 2, "text": "Patient presenting with fever and cough — suspected influenza.", "category": "Droplet"},
-    {"id": 3, "text": "Entering an isolation room for a patient with a contact-spread infection.", "category": "Contact"},
-    {"id": 4, "text": "Suspected tuberculosis — patient has persistent cough and night sweats.", "category": "Airborne"},
-    {"id": 5, "text": "Emergency high-exposure procedure with aerosolization risk.", "category": "High-Risk"},
-]
-
-# Demo scenario — use this for the live presentation
-DEMO_SCENARIO = SCENARIOS[3]
-EOF
-
-cat > backend/requirements.txt << 'EOF'
-# File: backend/requirements.txt
-fastapi
-uvicorn
-ultralytics
-openai
-python-dotenv
-python-multipart
-EOF
-
-# ── FRONTEND ─────────────────────────────────────────────
+# ── DIRECTORIES ──────────────────────────────────────────
 
 mkdir -p frontend/src/screens
 mkdir -p frontend/src/components
+mkdir -p frontend/src/types
+mkdir -p backend
+mkdir -p models
+mkdir -p data
 
-cat > frontend/src/screens/ScenarioScreen.jsx << 'EOF'
-// File: frontend/src/screens/ScenarioScreen.jsx
-// Displays the clinical scenario, triggers TTS, fires classify request on load
+# ═════════════════════════════════════════════════════════
+# FRONTEND CONFIG (needed to actually run)
+# ═════════════════════════════════════════════════════════
 
-export default function ScenarioScreen({ scenario, onStart }) {
-  return <div>{/* scenario text + speak button + start timer */}</div>
+cat > frontend/package.json << 'EOF'
+{
+  "name": "eppec-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev":     "vite",
+    "build":   "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react":     "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react":         "^18.2.0",
+    "@types/react-dom":     "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript":           "^5.3.0",
+    "vite":                 "^5.1.0"
+  }
 }
 EOF
 
-cat > frontend/src/screens/TimerScreen.jsx << 'EOF'
-// File: frontend/src/screens/TimerScreen.jsx
-// 30-second countdown with live camera feed — polls /detect every 1-2s
-
-export default function TimerScreen({ scenario, onComplete }) {
-  return <div>{/* countdown timer + CameraFeed + live detection preview */}</div>
+cat > frontend/tsconfig.json << 'EOF'
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true
+  },
+  "include": ["src"]
 }
 EOF
 
-cat > frontend/src/screens/ResultScreen.jsx << 'EOF'
-// File: frontend/src/screens/ResultScreen.jsx
-// Shows outcome: required vs detected, missing items, extra items, medical explanation
+cat > frontend/vite.config.ts << 'EOF'
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
 
-export default function ResultScreen({ required, detected, explanation }) {
-  return <div>{/* PPEChecklist + ConfidenceBar + explanation text */}</div>
-}
+export default defineConfig({
+  plugins: [react()],
+  server: { port: 5173 },
+})
 EOF
 
-cat > frontend/src/components/CameraFeed.jsx << 'EOF'
-// File: frontend/src/components/CameraFeed.jsx
-// Handles getUserMedia, captures frames, and sends base64 frames to /detect
-
-export default function CameraFeed({ onDetection }) {
-  return <video>{/* webcam stream */}</video>
-}
+cat > frontend/index.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPPEC</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
 EOF
 
-cat > frontend/src/components/PPEChecklist.jsx << 'EOF'
-// File: frontend/src/components/PPEChecklist.jsx
-// Three-column comparison: required / detected / missing with green/red indicators
-
-export default function PPEChecklist({ required, detected }) {
-  return <div>{/* checklist rows */}</div>
-}
-EOF
-
-cat > frontend/src/components/ConfidenceBar.jsx << 'EOF'
-// File: frontend/src/components/ConfidenceBar.jsx
-// Displays per-item YOLO confidence score as a visual bar
-// Items below the threshold trigger a manual confirm prompt
-
-export default function ConfidenceBar({ label, confidence, threshold = 0.6 }) {
-  return <div>{/* label + bar + low-confidence warning */}</div>
-}
-EOF
-
-cat > frontend/src/api.js << 'EOF'
-// File: frontend/src/api.js
-// All fetch() calls to the backend in one place
-
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
-
-export const classifyScenario = (text) =>
-  fetch(`${BASE_URL}/classify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  }).then((r) => r.json())
-
-export const detectPPE = (frameBase64) =>
-  fetch(`${BASE_URL}/detect`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ frame: frameBase64 }),
-  }).then((r) => r.json())
-
-export const getScenarios = () =>
-  fetch(`${BASE_URL}/scenarios`).then((r) => r.json())
-EOF
-
-cat > frontend/src/App.jsx << 'EOF'
-// File: frontend/src/App.jsx
-// Screen router — manages state machine: Scenario → Timer → Result
-
-import { useState } from "react"
-import ScenarioScreen from "./screens/ScenarioScreen"
-import TimerScreen from "./screens/TimerScreen"
-import ResultScreen from "./screens/ResultScreen"
-
-export default function App() {
-  const [screen, setScreen] = useState("scenario")
-  const [result, setResult] = useState(null)
-
-  return (
-    <>
-      {screen === "scenario" && <ScenarioScreen onStart={() => setScreen("timer")} />}
-      {screen === "timer"    && <TimerScreen onComplete={(r) => { setResult(r); setScreen("result") }} />}
-      {screen === "result"   && <ResultScreen {...result} onReset={() => setScreen("scenario")} />}
-    </>
-  )
-}
-EOF
-
-cat > frontend/src/main.jsx << 'EOF'
-// File: frontend/src/main.jsx
-// React entry point
-
+# Minimum needed for React to mount — empty beyond this
+cat > frontend/src/main.tsx << 'EOF'
 import React from "react"
 import ReactDOM from "react-dom/client"
 import App from "./App"
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 )
 EOF
 
-# ── MODELS & DATA ─────────────────────────────────────────
-
-mkdir -p models
-mkdir -p data
-
-cat > models/ppe_best.yaml << 'EOF'
-# File: models/ppe_best.yaml
-# YOLO class label config — maps model output indices to PPE item names
-
-nc: 6  # number of classes
-names:
-  0: Gloves
-  1: Gown
-  2: Surgical Mask
-  3: N95
-  4: Face Shield
-  5: Eye Protection
+cat > frontend/src/App.tsx << 'EOF'
+// File: frontend/src/App.tsx
+export default function App() {
+  return <div>EPPEC</div>
+}
 EOF
 
-echo "# Place your YOLO weights file (ppe_best.pt) here" > models/ppe_best.pt
+# ── EMPTY FILES ───────────────────────────────────────────
 
-cat > data/scenarios.json << 'EOF'
-[
-  { "id": 1, "text": "Routine blood draw on a stable patient.", "category": "Standard" },
-  { "id": 2, "text": "Patient presenting with fever and cough — suspected influenza.", "category": "Droplet" },
-  { "id": 3, "text": "Entering an isolation room for a patient with a contact-spread infection.", "category": "Contact" },
-  { "id": 4, "text": "Suspected tuberculosis — patient has persistent cough and night sweats.", "category": "Airborne" },
-  { "id": 5, "text": "Emergency high-exposure procedure with aerosolization risk.", "category": "High-Risk" }
-]
+touch frontend/src/types/index.ts
+touch frontend/src/api.ts
+touch frontend/src/screens/ScenarioScreen.tsx
+touch frontend/src/screens/TimerScreen.tsx
+touch frontend/src/screens/ResultScreen.tsx
+touch frontend/src/components/CameraFeed.tsx
+touch frontend/src/components/PPEChecklist.tsx
+touch frontend/src/components/ConfidenceBar.tsx
+
+# ═════════════════════════════════════════════════════════
+# BACKEND
+# ═════════════════════════════════════════════════════════
+
+cat > backend/requirements.txt << 'EOF'
+fastapi
+uvicorn
+ultralytics
+openai
+python-dotenv
+python-multipart
+Pillow
+numpy
 EOF
 
-cat > data/ppe_cache.json << 'EOF'
-{}
-EOF
+touch backend/main.py
+touch backend/classifier.py
+touch backend/detector.py
+touch backend/ppe_rules.py
+touch backend/scenarios.py
 
-# ── ROOT FILES ────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════
+# DATA
+# ═════════════════════════════════════════════════════════
+
+echo "{}" > data/ppe_cache.json
+echo "[]" > data/scenarios.json
+echo "# Drop ppe_best.pt here" > models/README.md
+
+# ═════════════════════════════════════════════════════════
+# ROOT
+# ═════════════════════════════════════════════════════════
 
 cat > .env << 'EOF'
-# File: .env
 OPENAI_API_KEY=your-key-here
 CONFIDENCE_THRESHOLD=0.6
 VITE_API_URL=http://localhost:8000
 EOF
 
-# Push everything to GitHub
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# YOLO weights
+models/*.pt
+
+# Env
+.env
+
+# Cache
+data/ppe_cache.json
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
+
+# ── PUSH ─────────────────────────────────────────────────
+
 git add .
-git commit -m "scaffold: add full project structure with starter files"
+git commit -m "scaffold: project structure, config files, empty stubs"
 git push
 
-echo "✅ EPPEC scaffolded and pushed to GitHub"
+echo ""
+echo "✅ Done."
+echo ""
+echo "  Frontend → cd frontend && npm install && npm run dev"
+echo "  Backend  → cd backend && pip install -r requirements.txt && uvicorn main:app --reload"

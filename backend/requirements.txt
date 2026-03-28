@@ -1,7 +1,8 @@
-# File: backend/requirements.txt
 fastapi
 uvicorn
 ultralytics
 openai
 python-dotenv
 python-multipart
+Pillow
+numpy
