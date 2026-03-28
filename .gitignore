@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# YOLO weights
+models/*.pt
+
+# Env
+.env
+
+# Cache
+data/ppe_cache.json
+
+# OS
+.DS_Store
+Thumbs.db
