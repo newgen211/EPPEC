@@ -1,0 +1,60 @@
+{
+  "image_path": "/content/construction_ppe_filtered/images/val/image1010.jpg",
+  "detections": [
+    {
+      "item": "safety_vest",
+      "raw_label": "safety_vest",
+      "confidence": 0.9046,
+      "bbox": {
+        "x1": 273.13,
+        "y1": 165.36,
+        "x2": 408.36,
+        "y2": 284.78
+      }
+    },
+    {
+      "item": "gloves",
+      "raw_label": "gloves",
+      "confidence": 0.8596,
+      "bbox": {
+        "x1": 400.54,
+        "y1": 269.65,
+        "x2": 437.54,
+        "y2": 309.07
+      }
+    },
+    {
+      "item": "hard_hat",
+      "raw_label": "hard_hat",
+      "confidence": 0.8065,
+      "bbox": {
+        "x1": 313.01,
+        "y1": 109.66,
+        "x2": 387.41,
+        "y2": 145.74
+      }
+    },
+    {
+      "item": "gloves",
+      "raw_label": "gloves",
+      "confidence": 0.752,
+      "bbox": {
+        "x1": 252.84,
+        "y1": 272.82,
+        "x2": 290.44,
+        "y2": 310.67
+      }
+    },
+    {
+      "item": "eye_protection",
+      "raw_label": "eye_protection",
+      "confidence": 0.5191,
+      "bbox": {
+        "x1": 314.4,
+        "y1": 136.39,
+        "x2": 384.16,
+        "y2": 155.62
+      }
+    }
+  ]
+}
