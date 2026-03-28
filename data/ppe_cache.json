@@ -1,0 +1,65 @@
+{
+  "Routine blood draw on a stable patient.": {
+    "category": "Standard",
+    "required": [
+      "Gloves"
+    ],
+    "explanation": "Standard precautions apply \u2014 gloves protect against bloodborne pathogen exposure during routine procedures."
+  },
+  "Patient presenting with fever and productive cough \u2014 suspected influenza.": {
+    "category": "Droplet",
+    "required": [
+      "Gloves",
+      "Gown",
+      "Surgical Mask",
+      "Eye Protection"
+    ],
+    "explanation": "Droplet precautions required \u2014 this pathogen spreads via respiratory droplets within 3 feet. Mask and eye protection prevent mucosal exposure."
+  },
+  "Entering an isolation room for a patient with C. diff infection.": {
+    "category": "Contact",
+    "required": [
+      "Gloves",
+      "Gown"
+    ],
+    "explanation": "Contact precautions required \u2014 gown and gloves prevent direct transmission via skin or contaminated surfaces."
+  },
+  "Suspected tuberculosis \u2014 patient has persistent cough and night sweats.": {
+    "category": "Airborne",
+    "required": [
+      "Gloves",
+      "Gown",
+      "N95",
+      "Eye Protection"
+    ],
+    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+  },
+  "Emergency intubation on an unknown-status patient with high aerosolization risk.": {
+    "category": "High-Risk",
+    "required": [
+      "Gloves",
+      "Gown",
+      "N95",
+      "Face Shield",
+      "Eye Protection"
+    ],
+    "explanation": "Highest level of protection required \u2014 full PPE including face shield prevents splash and aerosol exposure in an emergency high-risk setting."
+  },
+  "string": {
+    "category": "Standard",
+    "required": [
+      "Gloves"
+    ],
+    "explanation": "Standard precautions apply \u2014 gloves protect against bloodborne pathogen exposure during routine procedures."
+  },
+  "Suspected tuberculosis \u2014 patient has persistent cough.": {
+    "category": "Airborne",
+    "required": [
+      "Gloves",
+      "Gown",
+      "N95",
+      "Eye Protection"
+    ],
+    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+  }
+}
