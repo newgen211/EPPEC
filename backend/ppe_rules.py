@@ -19,28 +19,28 @@ PPE_RULES: dict[str, PPERule] = {
         ),
     },
     "Droplet": {
-        "required": ["Gloves", "Gown", "Surgical Mask", "Eye Protection"],
+        "required": ["Gloves", "Coverall", "Surgical Mask", "Eye Protection"],
         "explanation": (
             "Droplet precautions required — this pathogen spreads via respiratory "
             "droplets within 3 feet. Mask and eye protection prevent mucosal exposure."
         ),
     },
     "Contact": {
-        "required": ["Gloves", "Gown"],
+        "required": ["Gloves", "Coverall"],
         "explanation": (
-            "Contact precautions required — gown and gloves prevent direct "
+            "Contact precautions required — Coverall and gloves prevent direct "
             "transmission via skin or contaminated surfaces."
         ),
     },
     "Airborne": {
-        "required": ["Gloves", "Gown", "N95", "Eye Protection"],
+        "required": ["Gloves", "Coverall", "N95", "Eye Protection"],
         "explanation": (
             "Airborne precautions required — N95 is mandatory because this pathogen "
             "spreads via small airborne particles that remain suspended in the air."
         ),
     },
     "High-Risk": {
-        "required": ["Gloves", "Gown", "N95", "Face Shield", "Eye Protection"],
+        "required": ["Gloves", "Coverall", "N95", "Face Shield", "Eye Protection"],
         "explanation": (
             "Highest level of protection required — full PPE including face shield "
             "prevents splash and aerosol exposure in an emergency high-risk setting."
