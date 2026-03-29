@@ -13,31 +13,35 @@ type Props = {
 
 const OUTCOME_CONFIG = {
   correct: {
-    label: "All Clear — Correct PPE",
+    label: "CLEAR TO ENTER",
+    sublabel: "All required PPE verified",
     bg: "bg-[#419D78]",
     text: "text-white",
     border: "border-[#419D78]",
     emoji: "✓",
   },
   "over-protected": {
-    label: "Over-Protected",
-    bg: "bg-[#F5CB5C]",
-    text: "text-[#2E1F27]",
-    border: "border-[#F5CB5C]",
-    emoji: "+",
+    label: "CLEAR TO ENTER",
+    sublabel: "Additional PPE worn — no safety risk",
+    bg: "bg-[#419D78]",
+    text: "text-white",
+    border: "border-[#419D78]",
+    emoji: "✓",
   },
   incomplete: {
-    label: "Incomplete — PPE Missing",
-    bg: "bg-red-500",
+    label: "DO NOT ENTER",
+    sublabel: "Required PPE is missing",
+    bg: "bg-red-600",
     text: "text-white",
-    border: "border-red-500",
+    border: "border-red-600",
     emoji: "✗",
   },
   incorrect: {
-    label: "Incorrect PPE",
-    bg: "bg-red-500",
+    label: "DO NOT ENTER",
+    sublabel: "PPE requirements not met",
+    bg: "bg-red-600",
     text: "text-white",
-    border: "border-red-500",
+    border: "border-red-600",
     emoji: "✗",
   },
 } as const;
@@ -68,7 +72,7 @@ export default function ResultScreen({
     OUTCOME_CONFIG[outcomeKey] ?? OUTCOME_CONFIG["incorrect"];
 
   return (
-    <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
+    <div className="animate-fade-up eppec-card rounded-2xl border border-[#2E1F27]/20 p-6 shadow-sm">
       {/* Mode label */}
       <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
         {mode === "hurricane"

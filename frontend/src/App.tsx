@@ -11,11 +11,13 @@ import {
 } from "./api";
 import ConfidenceBar from "./components/ConfidenceBar";
 import ResultScreen from "./screens/ResultScreen";
+import BriefingScreen from "./screens/BriefingScreen";
 import { AUDIO } from "./audio/keys";
 import { useSound } from "./audio/useSound";
 import { useAiScenarioAudio } from "./audio/useAiScenarioAudio";
+import { clusterDetectionsByPerson, type PersonCluster } from "./utils/clustering";
 
-type AppStage = "modeSelect" | "scenario" | "camera" | "results";
+type AppStage = "modeSelect" | "scenario" | "briefing" | "camera" | "results";
 type AppMode = "hurricane" | "medical" | null;
 
 type DetectionConfidence = {
@@ -41,6 +43,17 @@ const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
 
 const MEDICAL_PPE_OPTIONS = ["Gloves", "Coverall", "Mask", "Eye Protection", "Face Shield"];
 const CONSTRUCTION_PPE_OPTIONS = ["Hard Hat", "Gloves", "Safety Vest", "Eye Protection"];
+const HURRICANE_REQUIRED = ["Hard Hat", "Safety Vest"];
+
+// Required PPE per category — used by BriefingScreen when backend required[] is absent
+const CATEGORY_REQUIRED: Record<string, string[]> = {
+  Standard:         ["Gloves"],
+  Contact:          ["Gloves", "Coverall"],
+  Droplet:          ["Gloves", "Coverall", "Mask", "Eye Protection"],
+  Airborne:         ["Gloves", "Coverall", "Mask", "Eye Protection"],
+  "High-Risk":      ["Gloves", "Coverall", "Mask", "Face Shield", "Eye Protection"],
+  "Flood Response": ["Hard Hat", "Safety Vest"],
+};
 
 const LABEL_TO_DISPLAY: Record<string, string> = {
   gloves: "Gloves",
@@ -149,6 +162,7 @@ export default function App() {
 
   const [loadingScenarios, setLoadingScenarios] = useState(false);
   const [loadingAiScenario, setLoadingAiScenario] = useState(false);
+  const [loadingNewAiScenario, setLoadingNewAiScenario] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -158,6 +172,7 @@ export default function App() {
   const [visionOnline, setVisionOnline] = useState(false);
   const [visionBusy, setVisionBusy] = useState(false);
   const [lastDetections, setLastDetections] = useState<Detection[]>([]);
+  const [personClusters, setPersonClusters] = useState<PersonCluster[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -171,6 +186,7 @@ export default function App() {
 
   const [flashActive, setFlashActive] = useState(false);
   const [mustLeaveOverlay, setMustLeaveOverlay] = useState(false);
+  const [audioBriefingPlaying, setAudioBriefingPlaying] = useState(false);
 
   // ── Audio ─────────────────────────────────────────────
   const { play, playBlob, stop } = useSound();
@@ -181,6 +197,12 @@ export default function App() {
   const showMedicalCountdownWarning = mode === "medical" && isCameraOn && timerActive && timerSecondsLeft <= 10;
 
   const ppeOptions = useMemo(() => (mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS), [mode]);
+
+  const briefingRequiredPPE = useMemo(() => {
+    if (!selectedScenario) return [];
+    if (selectedScenario.required?.length) return selectedScenario.required;
+    return CATEGORY_REQUIRED[selectedScenario.category] ?? [];
+  }, [selectedScenario]);
 
   const unsafeVestMatches = useMemo(() => {
     if (mode !== "hurricane") return [];
@@ -223,6 +245,33 @@ export default function App() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [uploadedImage]);
+
+  // ── Play briefing audio when entering the briefing stage ──
+  useEffect(() => {
+    if (stage !== "briefing" || !selectedScenario) return;
+    setAudioBriefingPlaying(true);
+
+    if (selectedMedicalScenarioId === AI_SCENARIO_OPTION_ID && aiScenarioBlobUrl) {
+      playBlob(aiScenarioBlobUrl);
+    } else if (mode === "hurricane") {
+      play(AUDIO.SCENARIO_BRIEFING_HURRICANE);
+    } else {
+      const briefingMap: Record<number, typeof AUDIO[keyof typeof AUDIO]> = {
+        1: AUDIO.SCENARIO_BRIEFING_1,
+        2: AUDIO.SCENARIO_BRIEFING_2,
+        3: AUDIO.SCENARIO_BRIEFING_3,
+        4: AUDIO.SCENARIO_BRIEFING_4,
+        5: AUDIO.SCENARIO_BRIEFING_5,
+      };
+      const key = selectedMedicalScenarioId !== null ? briefingMap[selectedMedicalScenarioId] : undefined;
+      if (key) play(key);
+      else play(AUDIO.SCENARIO_SELECTED);
+    }
+
+    // Hide the audio indicator after 6 seconds
+    const timer = setTimeout(() => setAudioBriefingPlaying(false), 6000);
+    return () => clearTimeout(timer);
+  }, [stage]);
 
   useEffect(() => {
     if (!isCameraOn || !cameraStream || !videoRef.current) return;
@@ -321,7 +370,7 @@ export default function App() {
     if (selectedMode === "hurricane") {
       setSelectedScenario(HURRICANE_SCENARIO);
       setSelectedMedicalScenarioId(null);
-      setStage("camera");
+      setStage("briefing");
       return;
     }
     const firstScenario = medicalScenarios[0] ?? aiScenario ?? null;
@@ -332,24 +381,49 @@ export default function App() {
     setStage("scenario");
   };
 
-  const handleMedicalScenarioChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = Number(event.target.value);
+  const handleBackFromBriefing = () => {
+    stop();
+    setAudioBriefingPlaying(false);
+    setStage(mode === "hurricane" ? "modeSelect" : "scenario");
+  };
+
+  const handleBackFromCamera = () => {
+    stop();
+    stopCamera();
+    setUploadedImage(null);
     setResult(null);
     setErrorMessage(null);
-    if (selectedId === AI_SCENARIO_OPTION_ID && aiScenario) {
-      setSelectedScenario(aiScenario);
-      setSelectedMedicalScenarioId(AI_SCENARIO_OPTION_ID);
-      return;
+    setLastDetections([]);
+    setPersonClusters([]);
+    setVisionOnline(false);
+    setLiveConfidences(ppeOptions.map((item) => ({ item, confidence: 0 })));
+    setStage("briefing");
+  };
+
+  const handleRandomizeAiScenario = async () => {
+    if (loadingNewAiScenario) return;
+    setLoadingNewAiScenario(true);
+    try {
+      const fresh = await fetchGeneratedScenario();
+      setAiScenario(fresh);
+      // If the AI scenario is currently selected, update the selection too
+      if (selectedMedicalScenarioId === AI_SCENARIO_OPTION_ID) {
+        setSelectedScenario(fresh);
+      }
+    } catch {
+      // silently fail — existing AI scenario stays
+    } finally {
+      setLoadingNewAiScenario(false);
     }
-    setSelectedScenario(medicalScenarios.find((s) => s.id === selectedId) ?? null);
-    setSelectedMedicalScenarioId(selectedId);
   };
 
   const handleRestart = () => {
+    stop();
     resetForNewRun();
     setMode(null);
     setSelectedScenario(null);
     setSelectedMedicalScenarioId(null);
+    setAudioBriefingPlaying(false);
     setStage("modeSelect");
   };
 
@@ -438,6 +512,18 @@ export default function App() {
       const data = await detectUpload(liveFile, modelType);
       setLastDetections(data.detections);
       setLiveConfidences(normalizeDetectionsToConfidence(data.detections, ppeOptions));
+
+      // Cluster detections into per-person groups (hurricane mode)
+      if (mode === "hurricane" && data.image_size[0] > 0) {
+        const clusters = clusterDetectionsByPerson(
+          data.detections,
+          HURRICANE_REQUIRED,
+          toDisplayLabel,
+          data.image_size[0],
+        );
+        setPersonClusters(clusters);
+      }
+
       setVisionOnline(true);
     } catch {
       setVisionOnline(false);
@@ -505,7 +591,7 @@ export default function App() {
     <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]" style={{ backgroundImage: "radial-gradient(circle, #2E1F2718 1px, transparent 1px)", backgroundSize: "24px 24px" }}>
 
       {/* ── Header ───────────────────────────────────────────── */}
-      <header className="border-b-4 border-[#F5CB5C] bg-[#4059AD] px-6 py-4">
+      <header className="eppec-header border-b-4 border-[#F5CB5C] px-6 py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#E2CFEA]/40 bg-[#E2CFEA]/10 text-xl">
@@ -518,11 +604,11 @@ export default function App() {
           </div>
           {/* Stage breadcrumb */}
           <div className="hidden items-center gap-2 text-xs font-medium text-[#E2CFEA]/60 sm:flex">
-            {(["modeSelect","scenario","camera","results"] as AppStage[]).map((s, i) => (
+            {(["modeSelect","scenario","briefing","camera","results"] as AppStage[]).map((s, i) => (
               <span key={s} className="flex items-center gap-2">
                 {i > 0 && <span>›</span>}
                 <span className={stage === s ? "text-[#F5CB5C]" : ""}>
-                  {s === "modeSelect" ? "Mode" : s === "scenario" ? "Scenario" : s === "camera" ? "Camera" : "Results"}
+                  {s === "modeSelect" ? "Mode" : s === "scenario" ? "Scenario" : s === "briefing" ? "Briefing" : s === "camera" ? "Camera" : "Results"}
                 </span>
               </span>
             ))}
@@ -551,7 +637,7 @@ export default function App() {
 
         {/* ── Mode Select ──────────────────────────────────────── */}
         {stage === "modeSelect" && (
-          <div>
+          <div className="animate-fade-up">
             <div className="mb-8 text-center">
               <h2 className="mb-2 text-3xl font-bold">Choose a Mode</h2>
               <p className="text-[#2E1F27]/60">Select the PPE workflow to run the live check against.</p>
@@ -576,7 +662,7 @@ export default function App() {
               {/* Hurricane card */}
               <button
                 onClick={() => handleSelectMode("hurricane")}
-                className="group flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27] border-t-[#F5CB5C] bg-[#E2CFEA] p-6 text-left transition hover:shadow-lg hover:shadow-[#F5CB5C]/20"
+                className="group eppec-card flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27]/20 border-t-[#F5CB5C] p-6 text-left transition hover:shadow-[0_8px_30px_rgba(245,203,92,0.25)] hover:border-[#2E1F27]/40"
               >
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#4059AD] text-3xl transition group-hover:scale-105">
                   🌊
@@ -599,7 +685,7 @@ export default function App() {
                   }
                 }}
                 disabled={loadingScenarios || loadingAiScenario}
-                className="group flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27] border-t-[#419D78] bg-[#E2CFEA] p-6 text-left transition hover:shadow-lg hover:shadow-[#419D78]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="group eppec-card flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27]/20 border-t-[#419D78] p-6 text-left transition hover:shadow-[0_8px_30px_rgba(65,157,120,0.25)] hover:border-[#2E1F27]/40 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#419D78] text-3xl transition group-hover:scale-105">
                   🏥
@@ -619,7 +705,7 @@ export default function App() {
 
         {/* ── Scenario Select ──────────────────────────────────── */}
         {stage === "scenario" && selectedScenario && (
-          <div>
+          <div className="animate-fade-up">
             <div className="mb-6">
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-[#4059AD]" />
@@ -650,7 +736,7 @@ export default function App() {
                     className="flex w-full items-start gap-4 rounded-xl border-2 p-4 text-left transition hover:shadow-md"
                     style={isSelected
                       ? { borderColor: colors.bg, backgroundColor: colors.bg + "18" }
-                      : { borderColor: "#2E1F2730", backgroundColor: "#E2CFEA" }
+                      : { borderColor: "#2E1F2730", backgroundColor: "rgba(255,255,255,0.6)" }
                     }
                   >
                     {/* Category badge */}
@@ -661,7 +747,28 @@ export default function App() {
                       {catKey}
                     </span>
                     <span className="flex-1 text-sm leading-relaxed">{scenario.text}</span>
-                    {isSelected && (
+
+                    {/* Randomize button — only on AI card */}
+                    {scenario._isAi && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleRandomizeAiScenario();
+                        }}
+                        disabled={loadingNewAiScenario}
+                        title="Generate a new AI scenario"
+                        className="mt-0.5 flex-shrink-0 rounded-lg border border-[#7B2D8B]/30 bg-[#7B2D8B]/10 px-2 py-1 text-xs font-semibold text-[#7B2D8B] transition hover:bg-[#7B2D8B]/20 disabled:opacity-50"
+                      >
+                        {loadingNewAiScenario ? (
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#7B2D8B] border-t-transparent" />
+                        ) : "⟳"}
+                      </button>
+                    )}
+
+                    {isSelected && !scenario._isAi && (
+                      <span className="mt-0.5 flex-shrink-0 font-bold" style={{ color: colors.bg }}>✓</span>
+                    )}
+                    {isSelected && scenario._isAi && !loadingNewAiScenario && (
                       <span className="mt-0.5 flex-shrink-0 font-bold" style={{ color: colors.bg }}>✓</span>
                     )}
                   </button>
@@ -671,28 +778,7 @@ export default function App() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => {
-                  setStage("camera");
-                  if (selectedMedicalScenarioId === AI_SCENARIO_OPTION_ID && aiScenarioBlobUrl) {
-                    playBlob(aiScenarioBlobUrl);
-                  } else if (mode === "hurricane") {
-                    play(AUDIO.SCENARIO_BRIEFING_HURRICANE);
-                  } else {
-                    // Map scenario ID to its pre-recorded briefing key
-                    const briefingMap: Record<number, typeof AUDIO[keyof typeof AUDIO]> = {
-                      1: AUDIO.SCENARIO_BRIEFING_1,
-                      2: AUDIO.SCENARIO_BRIEFING_2,
-                      3: AUDIO.SCENARIO_BRIEFING_3,
-                      4: AUDIO.SCENARIO_BRIEFING_4,
-                      5: AUDIO.SCENARIO_BRIEFING_5,
-                    };
-                    const key = selectedMedicalScenarioId !== null
-                      ? briefingMap[selectedMedicalScenarioId]
-                      : undefined;
-                    if (key) play(key);
-                    else play(AUDIO.SCENARIO_SELECTED);
-                  }
-                }}
+                onClick={() => setStage("briefing")}
                 className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-5 py-2.5 font-semibold transition hover:brightness-95"
               >
                 Start PPE Challenge →
@@ -707,9 +793,25 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Briefing Stage ───────────────────────────────────── */}
+        {stage === "briefing" && selectedScenario && (
+          <BriefingScreen
+            scenario={selectedScenario}
+            requiredPPE={briefingRequiredPPE}
+            mode={mode}
+            audioPlaying={audioBriefingPlaying}
+            onBeginScan={() => {
+              stop();
+              setAudioBriefingPlaying(false);
+              setStage("camera");
+            }}
+            onBack={handleBackFromBriefing}
+          />
+        )}
+
         {/* ── Camera Stage ─────────────────────────────────────── */}
         {stage === "camera" && selectedScenario && (
-          <div className="rounded-2xl border-2 border-l-4 border-[#2E1F27] border-l-[#4059AD] bg-[#E2CFEA] p-6 shadow-sm">
+          <div className="animate-fade-up eppec-card rounded-2xl border-2 border-l-4 border-[#2E1F27]/20 border-l-[#4059AD] p-6 shadow-sm">
             <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#4059AD]">
               {mode === "hurricane" ? "Hurricane Response" : "Medical PPE"}
             </div>
@@ -795,7 +897,7 @@ export default function App() {
 
                 {/* Timer bar */}
                 {mode === "medical" && (
-                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                  <div className="eppec-card mb-4 rounded-xl border border-[#2E1F27]/15 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-semibold">Timed Challenge</div>
@@ -830,17 +932,49 @@ export default function App() {
                       )}
                       {mode === "hurricane" && (
                         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                          {lastDetections.map((detection, index) => {
-                            const isUnsafeVest = detection.label === "safety_vest" && unsafeVestMatches.some((m) => m.vestIndex === index);
+                          {personClusters.map((cluster) => {
+                            const video = videoRef.current;
+                            if (!video || video.videoWidth === 0) return null;
+                            const sx = video.clientWidth  / video.videoWidth;
+                            const sy = video.clientHeight / video.videoHeight;
+                            const style: React.CSSProperties = {
+                              position: "absolute",
+                              left:   `${cluster.bbox.x1 * sx}px`,
+                              top:    `${cluster.bbox.y1 * sy}px`,
+                              width:  `${(cluster.bbox.x2 - cluster.bbox.x1) * sx}px`,
+                              height: `${(cluster.bbox.y2 - cluster.bbox.y1) * sy}px`,
+                              borderWidth: 2,
+                              borderStyle: "solid",
+                              borderColor: cluster.compliant ? "#419D78" : "#ef4444",
+                            };
                             return (
-                              <div
-                                key={`${detection.label}-${index}`}
-                                style={getScaledBBoxStyle(detection, videoRef.current)}
-                                className={`border-2 ${isUnsafeVest ? "border-red-500" : "border-[#F5CB5C]"}`}
-                              >
-                                <div className={`absolute left-0 top-0 -translate-y-full px-2 py-0.5 text-xs font-bold ${isUnsafeVest ? "bg-red-500 text-white" : "bg-[#F5CB5C] text-[#2E1F27]"}`}>
-                                  {toDisplayLabel(detection.label)} {Math.round(detection.confidence * 100)}%
+                              <div key={cluster.id} style={style}>
+                                {/* Person badge */}
+                                <div
+                                  className="absolute left-0 top-0 -translate-y-full px-2 py-1 text-xs font-black text-white"
+                                  style={{ backgroundColor: cluster.compliant ? "#419D78" : "#ef4444" }}
+                                >
+                                  {cluster.compliant
+                                    ? `P${cluster.id} ✓`
+                                    : `P${cluster.id} ✗ ${cluster.missing.join(", ")}`}
                                 </div>
+                                {/* Individual item labels inside the cluster */}
+                                {cluster.detections.map((det, di) => {
+                                  const ix = (det.bbox.x1 - cluster.bbox.x1) * sx;
+                                  const iy = (det.bbox.y1 - cluster.bbox.y1) * sy;
+                                  const iw = (det.bbox.x2 - det.bbox.x1) * sx;
+                                  const ih = (det.bbox.y2 - det.bbox.y1) * sy;
+                                  return (
+                                    <div
+                                      key={di}
+                                      style={{ position: "absolute", left: ix, top: iy, width: iw, height: ih, border: "1px dashed rgba(255,255,255,0.4)" }}
+                                    >
+                                      <span className="absolute bottom-0 left-0 bg-black/50 px-1 text-[10px] text-white">
+                                        {toDisplayLabel(det.label)} {Math.round(det.confidence * 100)}%
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             );
                           })}
@@ -902,17 +1036,16 @@ export default function App() {
                       {submitting ? "Analysing…" : "Submit & Grade →"}
                     </button>
                   )}
-                  <button onClick={handleBackToScenario} className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]">
+                  <button onClick={handleBackFromCamera} className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]">
                     ← Back
                   </button>
                 </div>
               </div>
 
-              {/* ── Right aside — confidence bars ── */}
+              {/* ── Right aside — confidence bars (medical) ── */}
               {mode !== "hurricane" && (
                 <aside className="flex flex-col gap-4">
-                  {/* Live status header */}
-                  <div className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                  <div className="eppec-card rounded-xl border border-[#2E1F27]/15 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="text-sm font-bold uppercase tracking-wide">PPE Confidence</h3>
                       <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${visionOnline ? "border-[#419D78] text-[#419D78]" : "border-[#2E1F27]/30 text-[#2E1F27]/40"}`}>
@@ -940,6 +1073,77 @@ export default function App() {
                         {selectedScenario.category}
                       </span>
                     )}
+                  </div>
+                </aside>
+              )}
+
+              {/* ── Right aside — per-person compliance (hurricane) ── */}
+              {mode === "hurricane" && (
+                <aside className="flex flex-col gap-4">
+                  <div className="eppec-card rounded-xl border border-[#2E1F27]/15 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-wide">Team Compliance</h3>
+                      <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${visionOnline ? "border-[#419D78] text-[#419D78]" : "border-[#2E1F27]/30 text-[#2E1F27]/40"}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${visionOnline ? "animate-pulse bg-[#419D78]" : "bg-[#2E1F27]/30"}`} />
+                        {visionOnline ? "Live" : "Offline"}
+                      </span>
+                    </div>
+
+                    {personClusters.length === 0 ? (
+                      <div className="rounded-lg border-2 border-dashed border-[#2E1F27]/20 px-4 py-6 text-center text-sm text-[#2E1F27]/40">
+                        No people detected yet
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {personClusters.map((cluster) => (
+                          <div
+                            key={cluster.id}
+                            className="rounded-lg border-2 p-3"
+                            style={{ borderColor: cluster.compliant ? "#419D78" : "#ef4444" }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold">Person {cluster.id}</span>
+                              <span
+                                className="rounded-full px-2 py-0.5 text-xs font-black text-white"
+                                style={{ backgroundColor: cluster.compliant ? "#419D78" : "#ef4444" }}
+                              >
+                                {cluster.compliant ? "✓ Clear" : "✗ Fail"}
+                              </span>
+                            </div>
+                            {cluster.missing.length > 0 && (
+                              <p className="mt-1 text-xs text-red-500">
+                                Missing: {cluster.missing.join(", ")}
+                              </p>
+                            )}
+                            {cluster.correct.length > 0 && (
+                              <p className="mt-0.5 text-xs text-[#419D78]">
+                                ✓ {cluster.correct.join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Summary count */}
+                    {personClusters.length > 0 && (
+                      <div className="mt-3 rounded-lg bg-[#2E1F27]/5 px-3 py-2 text-center text-sm font-semibold">
+                        {personClusters.filter(c => c.compliant).length} / {personClusters.length} compliant
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Required PPE reminder */}
+                  <div className="eppec-card rounded-xl border border-[#2E1F27]/15 p-4">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#2E1F27]/40">Required for Entry</p>
+                    <div className="space-y-1">
+                      {HURRICANE_REQUIRED.map(item => (
+                        <div key={item} className="flex items-center gap-2 text-sm">
+                          <span className="h-2 w-2 rounded-full bg-[#F5CB5C]" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </aside>
               )}

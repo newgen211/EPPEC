@@ -2,7 +2,7 @@
 
 // ── Shared application types ──────────────────────────────
 
-export type AppStage = "modeSelect" | "scenario" | "camera" | "results";
+export type AppStage = "modeSelect" | "scenario" | "briefing" | "camera" | "results";
 export type AppMode = "hurricane" | "medical" | null;
 
 export type DetectionConfidence = {
