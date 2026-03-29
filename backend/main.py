@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from classifier import classify, warm_cache, generate_scenario
 from scenarios import get_all, get_by_id
 from ppe_rules import grade
+from detector import run_detection
+
 
 app = FastAPI(title="EPPEC API")
 
