@@ -1,27 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  detectAndGrade,
+  detectUpload,
+  fetchGeneratedScenario,
+  fetchScenarios,
+  type BackendScenario,
+  type DetectAndGradeResponse,
+  type Detection,
+} from "./api";
 
 type AppStage = "modeSelect" | "scenario" | "camera" | "results";
 type AppMode = "hurricane" | "medical" | null;
 
-type BackendScenario = {
-  id: number;
-  text: string;
-  category: string;
+type DetectionConfidence = {
+  item: string;
+  confidence: number;
 };
 
-type SubmitResult = {
-  scenario: string;
-  category: string;
-  required: string[];
-  selected: string[];
-  outcome: string;
-  correct: string[];
-  missing: string[];
-  extra: string[];
-  explanation: string;
-};
-
-const API_BASE_URL = "http://localhost:8000";
+const AI_SCENARIO_OPTION_ID = -1;
 
 const HURRICANE_SCENARIO: BackendScenario = {
   id: 1000,
@@ -57,19 +53,63 @@ const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
   },
 ];
 
-const PPE_OPTIONS = [
+const MEDICAL_PPE_OPTIONS = [
   "Gloves",
-  "Gown",
-  "Surgical Mask",
-  "N95",
+  "Coverall",
+  "Mask",
   "Eye Protection",
   "Face Shield",
 ];
 
-function pickRandomScenario(scenarios: BackendScenario[]): BackendScenario | null {
-  if (scenarios.length === 0) return null;
-  const randomIndex = Math.floor(Math.random() * scenarios.length);
-  return scenarios[randomIndex];
+const CONSTRUCTION_PPE_OPTIONS = [
+  "Hard Hat",
+  "Gloves",
+  "Safety Vest",
+  "Eye Protection",
+];
+
+const LABEL_TO_DISPLAY: Record<string, string> = {
+  gloves: "Gloves",
+  coverall: "Coverall",
+  mask: "Mask",
+  goggles: "Eye Protection",
+  eye_protection: "Eye Protection",
+  face_shield: "Face Shield",
+  hard_hat: "Hard Hat",
+  safety_vest: "Safety Vest",
+};
+
+function getConfidenceColor(confidence: number): string {
+  if (confidence >= 75) return "#419D78";
+  if (confidence >= 40) return "#F5CB5C";
+  return "#4059AD";
+}
+
+function toDisplayLabel(label: string): string {
+  return LABEL_TO_DISPLAY[label] ?? label;
+}
+
+function normalizeDetectionsToConfidence(
+  detections: Detection[],
+  options: string[]
+): DetectionConfidence[] {
+  const map = new Map<string, number>();
+
+  for (const option of options) {
+    map.set(option, 0);
+  }
+
+  for (const detection of detections) {
+    const displayLabel = toDisplayLabel(detection.label);
+    const confidence = Math.round(detection.confidence * 100);
+    const existing = map.get(displayLabel) ?? 0;
+    map.set(displayLabel, Math.max(existing, confidence));
+  }
+
+  return options.map((item) => ({
+    item,
+    confidence: map.get(item) ?? 0,
+  }));
 }
 
 export default function App() {
@@ -77,60 +117,88 @@ export default function App() {
   const [mode, setMode] = useState<AppMode>(null);
 
   const [medicalScenarios, setMedicalScenarios] = useState<BackendScenario[]>([]);
+  const [aiScenario, setAiScenario] = useState<BackendScenario | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<BackendScenario | null>(null);
+  const [selectedMedicalScenarioId, setSelectedMedicalScenarioId] = useState<number | null>(null);
 
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const [selectedPPE, setSelectedPPE] = useState<string[]>([]);
-  const [result, setResult] = useState<SubmitResult | null>(null);
+  const [result, setResult] = useState<DetectAndGradeResponse | null>(null);
 
   const [loadingScenarios, setLoadingScenarios] = useState(false);
-  const [generatingScenario, setGeneratingScenario] = useState(false);
+  const [loadingAiScenario, setLoadingAiScenario] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [liveConfidences, setLiveConfidences] = useState<DetectionConfidence[]>([]);
+  const [visionOnline, setVisionOnline] = useState(false);
+  const [visionBusy, setVisionBusy] = useState(false);
+  const [lastDetections, setLastDetections] = useState<Detection[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+
+  const ppeOptions = useMemo(() => {
+    return mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
+  }, [mode]);
 
   useEffect(() => {
-    const loadMedicalScenarios = async () => {
+    setLiveConfidences(
+      ppeOptions.map((item) => ({
+        item,
+        confidence: 0,
+      }))
+    );
+  }, [ppeOptions]);
+
+  useEffect(() => {
+    const loadMedicalData = async () => {
       try {
         setLoadingScenarios(true);
+        setLoadingAiScenario(true);
         setErrorMessage(null);
 
-        const scenariosUrl = `${API_BASE_URL}/scenarios`;
-        const response = await fetch(scenariosUrl);
+        const [scenariosResult, aiResult] = await Promise.allSettled([
+          fetchScenarios(),
+          fetchGeneratedScenario(),
+        ]);
 
-        const responseText = await response.text();
-
-        if (!response.ok) {
-          throw new Error(
-            `Failed to load scenarios: ${response.status} ${responseText}`
-          );
+        if (scenariosResult.status === "fulfilled") {
+          setMedicalScenarios(scenariosResult.value);
+        } else {
+          setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
+          setErrorMessage("Backend scenarios could not be loaded. Using fallback medical scenarios.");
         }
 
-        const data: BackendScenario[] = JSON.parse(responseText);
-        setMedicalScenarios(data);
+        if (aiResult.status === "fulfilled") {
+          setAiScenario(aiResult.value);
+        } else {
+          setAiScenario({
+            id: AI_SCENARIO_OPTION_ID,
+            text: "A patient under airborne isolation precautions requires assessment.",
+            category: "Airborne",
+          });
+        }
       } catch (error) {
         console.error(error);
-
-        const message =
-          error instanceof Error
-            ? `${error.message} — using fallback medical scenarios.`
-            : "Failed to load medical scenarios from the backend — using fallback medical scenarios.";
-
-        setErrorMessage(message);
         setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
+        setAiScenario({
+          id: AI_SCENARIO_OPTION_ID,
+          text: "A patient under airborne isolation precautions requires assessment.",
+          category: "Airborne",
+        });
+        setErrorMessage("Failed to load backend scenarios. Using fallback content.");
       } finally {
         setLoadingScenarios(false);
+        setLoadingAiScenario(false);
       }
     };
 
-    loadMedicalScenarios();
+    loadMedicalData();
   }, []);
 
   useEffect(() => {
@@ -159,7 +227,7 @@ export default function App() {
       }
     };
 
-    startPlayback();
+    void startPlayback();
   }, [isCameraOn, cameraStream]);
 
   useEffect(() => {
@@ -167,6 +235,16 @@ export default function App() {
       cameraStream?.getTracks().forEach((track) => track.stop());
     };
   }, [cameraStream]);
+
+  useEffect(() => {
+    if (stage !== "camera" || !isCameraOn) return;
+
+    const interval = setInterval(() => {
+      void sendLiveFrameForDetection();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [stage, isCameraOn, mode, ppeOptions]);
 
   const stopCamera = () => {
     cameraStream?.getTracks().forEach((track) => track.stop());
@@ -177,14 +255,22 @@ export default function App() {
     }
 
     setIsCameraOn(false);
+    setVisionBusy(false);
   };
 
   const resetForNewRun = () => {
     stopCamera();
     setUploadedImage(null);
-    setSelectedPPE([]);
     setResult(null);
     setErrorMessage(null);
+    setLastDetections([]);
+    setVisionOnline(false);
+    setLiveConfidences(
+      ppeOptions.map((item) => ({
+        item,
+        confidence: 0,
+      }))
+    );
   };
 
   const handleSelectMode = (selectedMode: AppMode) => {
@@ -193,71 +279,66 @@ export default function App() {
 
     if (selectedMode === "hurricane") {
       setSelectedScenario(HURRICANE_SCENARIO);
+      setSelectedMedicalScenarioId(null);
     } else {
-      setSelectedScenario(pickRandomScenario(medicalScenarios));
+      const firstScenario = medicalScenarios[0] ?? aiScenario ?? null;
+      setSelectedScenario(firstScenario);
+      setSelectedMedicalScenarioId(firstScenario?.id ?? null);
     }
 
     setStage("scenario");
   };
 
-  const handleRandomMedicalScenario = () => {
-    setSelectedScenario(pickRandomScenario(medicalScenarios));
-    setSelectedPPE([]);
+  const handleMedicalScenarioChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const selectedId = Number(event.target.value);
+
     setResult(null);
     setErrorMessage(null);
-  };
 
-  const handleGenerateAiScenario = async () => {
-    try {
-      setGeneratingScenario(true);
-      setErrorMessage(null);
-
-      const response = await fetch(`${API_BASE_URL}/scenarios/generate`);
-      const responseText = await response.text();
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to generate AI scenario: ${response.status} ${responseText}`
-        );
-      }
-
-      const data: BackendScenario = JSON.parse(responseText);
-      setSelectedScenario(data);
-      setSelectedPPE([]);
-      setResult(null);
-    } catch (error) {
-      console.error(error);
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to generate AI scenario.";
-
-      setErrorMessage(message);
-    } finally {
-      setGeneratingScenario(false);
+    if (selectedId === AI_SCENARIO_OPTION_ID && aiScenario) {
+      setSelectedScenario(aiScenario);
+      setSelectedMedicalScenarioId(AI_SCENARIO_OPTION_ID);
+      return;
     }
+
+    const foundScenario =
+      medicalScenarios.find((scenario) => scenario.id === selectedId) ?? null;
+
+    setSelectedScenario(foundScenario);
+    setSelectedMedicalScenarioId(selectedId);
   };
 
   const handleRestart = () => {
     resetForNewRun();
     setMode(null);
     setSelectedScenario(null);
+    setSelectedMedicalScenarioId(null);
     setStage("modeSelect");
   };
 
   const handleBackToScenario = () => {
     stopCamera();
     setUploadedImage(null);
-    setSelectedPPE([]);
     setResult(null);
     setErrorMessage(null);
+    setLastDetections([]);
+    setVisionOnline(false);
+    setLiveConfidences(
+      ppeOptions.map((item) => ({
+        item,
+        confidence: 0,
+      }))
+    );
     setStage("scenario");
   };
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     setUploadedImage(file);
+    setResult(null);
+    setErrorMessage(null);
   };
 
   const startCamera = async () => {
@@ -269,6 +350,7 @@ export default function App() {
 
       setCameraStream(stream);
       setIsCameraOn(true);
+      setVisionOnline(false);
     } catch (error) {
       console.error(error);
       alert("Unable to access the camera. Please allow camera permissions.");
@@ -295,26 +377,67 @@ export default function App() {
         if (!blob) return;
         const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
         setUploadedImage(file);
-        stopCamera();
       },
       "image/jpeg",
       0.95
     );
   };
 
-  const togglePPE = (item: string) => {
-    setSelectedPPE((prev) =>
-      prev.includes(item)
-        ? prev.filter((p) => p !== item)
-        : [...prev, item]
-    );
+  const sendLiveFrameForDetection = async () => {
+    if (visionBusy) return;
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    setVisionBusy(true);
+
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((value) => resolve(value), "image/jpeg", 0.8);
+      });
+
+      if (!blob) return;
+
+      const liveFile = new File([blob], "live-frame.jpg", { type: "image/jpeg" });
+      const modelType = mode === "hurricane" ? "construction" : "medical";
+
+      const data = await detectUpload(liveFile, modelType);
+
+      setLastDetections(data.detections);
+      setLiveConfidences(
+        normalizeDetectionsToConfidence(data.detections, ppeOptions)
+      );
+      setVisionOnline(true);
+    } catch (error) {
+      console.error(error);
+      setVisionOnline(false);
+    } finally {
+      setVisionBusy(false);
+    }
   };
 
   const handleSubmit = async () => {
     if (!selectedScenario) return;
 
-    if (selectedPPE.length === 0) {
-      setErrorMessage("Please select at least one PPE item before submitting.");
+    if (!uploadedImage) {
+      setErrorMessage("Please upload or capture an image before submitting.");
+      return;
+    }
+
+    if (mode === "hurricane") {
+      setErrorMessage(
+        "The new detect-and-grade backend route is currently medical-mode only. Live construction detection is wired, but final grading still needs a construction grading route."
+      );
       return;
     }
 
@@ -322,29 +445,31 @@ export default function App() {
       setSubmitting(true);
       setErrorMessage(null);
 
-      const submitUrl = `${API_BASE_URL}/submit`;
+      const formData = new FormData();
+formData.append("file", uploadedImage);
 
-      const response = await fetch(submitUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          scenario_text: selectedScenario.text,
-          selected: selectedPPE,
-          mode,
-        }),
-      });
+const response = await fetch(
+  `http://localhost:8000/detect-and-grade?scenario_text=${encodeURIComponent(
+    selectedScenario.text
+  )}&model_type=medical`,
+  {
+    method: "POST",
+    body: formData,
+  }
+);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Submit failed with status ${response.status}: ${errorText}`
-        );
-      }
+if (!response.ok) {
+  const text = await response.text();
+  throw new Error(`Error ${response.status}: ${text}`);
+}
 
-      const data: SubmitResult = await response.json();
+const data = await response.json();
+
       setResult(data);
+      setLastDetections(data.detections);
+      setLiveConfidences(
+        normalizeDetectionsToConfidence(data.detections, ppeOptions)
+      );
       setStage("results");
     } catch (error) {
       console.error(error);
@@ -352,7 +477,7 @@ export default function App() {
       const message =
         error instanceof Error
           ? error.message
-          : "Failed to submit PPE selection to the backend.";
+          : "Failed to submit image to the backend.";
 
       setErrorMessage(message);
     } finally {
@@ -361,65 +486,79 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-white px-6 py-8 text-gray-800">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="mb-8 text-3xl font-bold">PPE Scenario Classifier</h1>
+    <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]">
+      <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-5">
+        <div className="mx-auto max-w-5xl">
+          <h1 className="text-3xl font-bold text-[#E2CFEA]">
+            PPE Scenario Classifier
+          </h1>
+          <p className="mt-1 text-sm text-[#E2CFEA]/90">
+            Emergency responder PPE verification and training
+          </p>
+        </div>
+      </header>
 
+      <main className="mx-auto max-w-5xl px-6 py-8">
         {stage === "modeSelect" && (
-          <div className="rounded-2xl bg-gray-50 p-6 shadow-sm">
+          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
             <h2 className="mb-4 text-2xl font-semibold">Choose Test Mode</h2>
-            <p className="mb-6 text-gray-600">
+            <p className="mb-6 text-[#2E1F27]/75">
               Select which PPE workflow you want to test.
             </p>
 
-
-            {loadingScenarios && (
-              <div className="mb-4 rounded-lg bg-blue-50 px-4 py-3 text-blue-700">
+            {(loadingScenarios || loadingAiScenario) && (
+              <div className="mb-4 rounded-xl border-2 border-[#4059AD] bg-[#E2CFEA] px-4 py-3">
                 Loading medical scenarios...
               </div>
             )}
 
             {errorMessage && (
-              <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-red-700">
+              <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
                 {errorMessage}
               </div>
             )}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <button
+              <div
                 onClick={() => handleSelectMode("hurricane")}
-                className="rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:border-blue-400 hover:shadow"
+                className="cursor-pointer rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-5 transition hover:border-[#419D78]"
               >
                 <div className="mb-2 text-lg font-semibold">
                   General PPE for Hurricane Flood Response
                 </div>
-                <p className="text-sm text-gray-600">
-                  Test disaster-response PPE selection for contaminated flood
-                  environments.
+                <p className="text-sm text-[#2E1F27]/75">
+                  Uses the construction detector for live model inference.
                 </p>
-              </button>
+              </div>
 
-              <button
-                onClick={() => handleSelectMode("medical")}
-                disabled={loadingScenarios || medicalScenarios.length === 0}
-                className={`rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition ${
-                  loadingScenarios || medicalScenarios.length === 0
-                    ? "cursor-not-allowed opacity-50"
-                    : "hover:border-blue-400 hover:shadow"
+              <div
+                onClick={() => {
+                  if (
+                    !loadingScenarios &&
+                    !loadingAiScenario &&
+                    (medicalScenarios.length > 0 || aiScenario)
+                  ) {
+                    handleSelectMode("medical");
+                  }
+                }}
+                className={`rounded-2xl border-2 bg-[#E2CFEA] p-5 transition ${
+                  loadingScenarios || loadingAiScenario
+                    ? "cursor-not-allowed border-[#2E1F27] opacity-50"
+                    : "cursor-pointer border-[#2E1F27] hover:border-[#419D78]"
                 }`}
               >
                 <div className="mb-2 text-lg font-semibold">Medical PPE</div>
-                <p className="text-sm text-gray-600">
-                  Randomly picks one backend-loaded medical scenario.
+                <p className="text-sm text-[#2E1F27]/75">
+                  Uses backend scenarios and model-based detect-and-grade.
                 </p>
-              </button>
+              </div>
             </div>
           </div>
         )}
 
         {stage === "scenario" && selectedScenario && (
-          <div className="rounded-2xl bg-gray-50 p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-blue-600">
+          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
+            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
               {mode === "hurricane"
                 ? "General PPE for Hurricane Flood Response"
                 : "Medical PPE"}
@@ -427,33 +566,37 @@ export default function App() {
 
             <h2 className="mb-3 text-2xl font-semibold">Scenario</h2>
 
-            <p className="mb-4 leading-7">{selectedScenario.text}</p>
-
             {mode === "medical" && (
-              <div className="mb-6 flex flex-wrap gap-3">
-                <button
-                  onClick={handleRandomMedicalScenario}
-                  className="rounded-xl border border-gray-300 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-100"
+              <div className="mb-4">
+                <label className="mb-2 block text-sm font-medium">
+                  Choose a medical scenario
+                </label>
+                <select
+                  value={selectedMedicalScenarioId ?? ""}
+                  onChange={handleMedicalScenarioChange}
+                  disabled={loadingAiScenario}
+                  className="w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-3 py-3"
                 >
-                  Random Scenario
-                </button>
-
-                <button
-                  onClick={handleGenerateAiScenario}
-                  disabled={generatingScenario}
-                  className={`rounded-xl px-4 py-2 font-medium text-white transition ${
-                    generatingScenario
-                      ? "cursor-not-allowed bg-gray-400"
-                      : "bg-purple-600 hover:bg-purple-700"
-                  }`}
-                >
-                  {generatingScenario ? "Generating..." : "Generate AI Scenario"}
-                </button>
+                  {medicalScenarios.map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.text}
+                    </option>
+                  ))}
+                  {aiScenario && (
+                    <option value={AI_SCENARIO_OPTION_ID}>
+                      {aiScenario.text}
+                    </option>
+                  )}
+                </select>
               </div>
             )}
 
+            <div className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+              <p className="leading-7">{selectedScenario.text}</p>
+            </div>
+
             {errorMessage && (
-              <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-red-700">
+              <div className="mt-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
                 {errorMessage}
               </div>
             )}
@@ -461,14 +604,14 @@ export default function App() {
             <div className="mt-6 flex gap-3">
               <button
                 onClick={() => setStage("camera")}
-                className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
               >
                 Start PPE Challenge
               </button>
 
               <button
                 onClick={handleRestart}
-                className="rounded-xl border border-gray-300 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-100"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
               >
                 Back
               </button>
@@ -477,137 +620,184 @@ export default function App() {
         )}
 
         {stage === "camera" && selectedScenario && (
-          <div className="rounded-2xl bg-gray-50 p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-blue-600">
+          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
+            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
               {mode === "hurricane"
                 ? "General PPE for Hurricane Flood Response"
                 : "Medical PPE"}
             </div>
 
             <h2 className="mb-3 text-2xl font-semibold">
-              Upload or Capture PPE Image
+              Live Camera Detection
             </h2>
-            <p className="mb-4 text-gray-600">
-              Upload an image or use your laptop camera to take a photo. For
-              now, the backend grading uses the PPE checklist below.
+            <p className="mb-6 text-[#2E1F27]/75">
+              The live camera feed now calls the backend model route directly.
+              Final grading uses the new detect-and-grade API.
             </p>
 
             {errorMessage && (
-              <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-red-700">
+              <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
                 {errorMessage}
               </div>
             )}
 
-            <label className="mb-4 block">
-              <span className="mb-2 block text-sm font-medium text-gray-700">
-                Upload Image
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                className="block w-full rounded-lg border border-gray-300 bg-white p-3 text-sm text-gray-700 file:mr-4 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700"
-              />
-            </label>
+            <div className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
+              <div>
+                <label className="mb-4 block">
+                  <span className="mb-2 block text-sm font-medium">
+                    Upload Image
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-3 text-sm file:mr-4 file:rounded-lg file:border-2 file:border-[#2E1F27] file:bg-[#F5CB5C] file:px-4 file:py-2 file:text-sm file:font-medium hover:file:brightness-95"
+                  />
+                </label>
 
-            <div className="mb-4 flex flex-wrap gap-3">
-              {!isCameraOn ? (
-                <button
-                  onClick={startCamera}
-                  className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white transition hover:bg-green-700"
-                >
-                  Open Camera
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={capturePhoto}
-                    className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
-                  >
-                    Capture Photo
-                  </button>
+                <div className="mb-4 flex flex-wrap gap-3">
+                  {!isCameraOn ? (
+                    <button
+                      onClick={startCamera}
+                      className="rounded-xl border-2 border-[#2E1F27] bg-[#4059AD] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                    >
+                      Open Live Camera
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={capturePhoto}
+                        className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
+                      >
+                        Capture Snapshot
+                      </button>
 
-                  <button
-                    onClick={stopCamera}
-                    className="rounded-xl bg-red-600 px-4 py-2 font-medium text-white transition hover:bg-red-700"
-                  >
-                    Stop Camera
-                  </button>
-                </>
-              )}
-            </div>
+                      <button
+                        onClick={() => void sendLiveFrameForDetection()}
+                        className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                      >
+                        Run Detection Now
+                      </button>
 
-            {isCameraOn && (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="mb-4 block w-full rounded-xl border border-gray-300 bg-black"
-              />
-            )}
-
-            <canvas ref={canvasRef} className="hidden" />
-
-            <div className="mb-6 overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-white">
-              {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt="PPE preview"
-                  className="h-80 w-full object-contain"
-                />
-              ) : (
-                <div className="flex h-80 items-center justify-center text-gray-500">
-                  No image selected
+                      <button
+                        onClick={stopCamera}
+                        className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
+                      >
+                        Stop Camera
+                      </button>
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
-              <h3 className="mb-3 text-lg font-semibold">Select PPE Worn</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {PPE_OPTIONS.map((item) => (
-                  <label
-                    key={item}
-                    className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedPPE.includes(item)}
-                      onChange={() => togglePPE(item)}
+                {isCameraOn && (
+                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-black p-2">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="block w-full rounded-lg"
                     />
-                    <span>{item}</span>
-                  </label>
-                ))}
+                  </div>
+                )}
+
+                <canvas ref={canvasRef} className="hidden" />
+
+                <div className="mb-6 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA]">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="PPE preview"
+                      className="h-80 w-full object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-80 items-center justify-center text-[#2E1F27]/65">
+                      No captured or uploaded image selected
+                    </div>
+                  )}
+                </div>
+
+                
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
+                      submitting
+                        ? "cursor-not-allowed bg-[#2E1F27]/20"
+                        : "bg-[#F5CB5C] hover:brightness-95"
+                    }`}
+                  >
+                    {submitting ? "Processing..." : "Submit Image"}
+                  </button>
+
+                  <button
+                    onClick={handleBackToScenario}
+                    className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
+                  >
+                    Back
+                  </button>
+                </div>
               </div>
+
+              <aside className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+  <div className="mb-4 flex items-center justify-between gap-3">
+    <h3 className="text-lg font-semibold">Latest Model Detections</h3>
+    <span
+      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+        visionOnline
+          ? "border-[#419D78] text-[#419D78]"
+          : "border-[#4059AD] text-[#4059AD]"
+      }`}
+    >
+      {visionOnline ? "Vision Online" : "Waiting for Detection"}
+    </span>
+  </div>
+
+  {lastDetections.length > 0 ? (
+    <div className="space-y-3">
+      {lastDetections.map((detection, index) => (
+        <div
+          key={`${detection.label}-${index}`}
+          className="rounded-lg border-2 border-[#2E1F27] px-3 py-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">
+              {toDisplayLabel(detection.label)}
+            </span>
+            <span className="text-sm font-semibold">
+              {Math.round(detection.confidence * 100)}%
+            </span>
+          </div>
+
+          {detection.raw_class && detection.raw_class !== detection.label && (
+            <div className="mt-1 text-xs text-[#2E1F27]/70">
+              Raw class: {detection.raw_class}
             </div>
+          )}
 
-            <div className="flex gap-3">
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className={`rounded-xl px-4 py-2 font-medium text-white transition ${
-                  submitting
-                    ? "cursor-not-allowed bg-gray-400"
-                    : "bg-blue-600 hover:bg-blue-700"
-                }`}
-              >
-                {submitting ? "Processing..." : "Submit PPE"}
-              </button>
+          <div className="mt-2 text-xs text-[#2E1F27]/70">
+            Box: x1 {detection.bbox.x1}, y1 {detection.bbox.y1}, x2 {detection.bbox.x2}, y2 {detection.bbox.y2}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div className="rounded-lg border-2 border-dashed border-[#2E1F27] px-4 py-6 text-sm text-[#2E1F27]/70">
+      No detections yet. Run live detection or submit an image.
+    </div>
+  )}
 
-              <button
-                onClick={handleBackToScenario}
-                className="rounded-xl border border-gray-300 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-100"
-              >
-                Back
-              </button>
+  
+</aside>
             </div>
           </div>
         )}
 
         {stage === "results" && result && (
-          <div className="rounded-2xl bg-gray-50 p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-blue-600">
+          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
+            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
               {mode === "hurricane"
                 ? "General PPE for Hurricane Flood Response"
                 : "Medical PPE"}
@@ -616,10 +806,8 @@ export default function App() {
             <h2 className="mb-4 text-2xl font-semibold">Results</h2>
 
             {previewUrl && (
-              <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-                <p className="mb-3 text-sm font-medium text-gray-700">
-                  Submitted Image
-                </p>
+              <div className="mb-5 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                <p className="mb-3 text-sm font-medium">Submitted Image</p>
                 <img
                   src={previewUrl}
                   alt="Submitted PPE"
@@ -628,55 +816,67 @@ export default function App() {
               </div>
             )}
 
-            <div className="mb-3 rounded-lg bg-yellow-50 px-4 py-3 text-yellow-800">
+            <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
               <span className="font-semibold">Outcome:</span> {result.outcome}
             </div>
 
-            <p className="mb-2">
-              <span className="font-semibold">Category:</span> {result.category}
-            </p>
-            <p className="mb-2">
-              <span className="font-semibold">Required:</span>{" "}
-              {result.required.join(", ") || "None"}
-            </p>
-            <p className="mb-2">
-              <span className="font-semibold">Selected:</span>{" "}
-              {result.selected.join(", ") || "None"}
-            </p>
-            <p className="mb-2">
-              <span className="font-semibold">Correct:</span>{" "}
-              {result.correct.join(", ") || "None"}
-            </p>
-            <p className="mb-2">
-              <span className="font-semibold">Missing:</span>{" "}
-              {result.missing.join(", ") || "None"}
-            </p>
-            <p className="mb-2">
-              <span className="font-semibold">Extra:</span>{" "}
-              {result.extra.join(", ") || "None"}
-            </p>
-            <p className="mb-6">
-              <span className="font-semibold">Why:</span> {result.explanation}
-            </p>
+            <div className="space-y-2 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+              <p>
+                <span className="font-semibold">Category:</span> {result.category}
+              </p>
+              <p>
+                <span className="font-semibold">Required:</span>{" "}
+                {result.required.join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Detected:</span>{" "}
+                {result.detections.map((d) => toDisplayLabel(d.label)).join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Correct:</span>{" "}
+                {result.correct.join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Missing:</span>{" "}
+                {result.missing.join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Extra:</span>{" "}
+                {result.extra.join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Low Confidence:</span>{" "}
+                {result.low_confidence.map((label) => toDisplayLabel(label)).join(", ") || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Detections:</span> {result.num_detections}
+              </p>
+              <p>
+                <span className="font-semibold">Inference Time:</span> {result.elapsed_time}s
+              </p>
+              <p>
+                <span className="font-semibold">Why:</span> {result.explanation}
+              </p>
+            </div>
 
-            <div className="flex gap-3">
+            <div className="mt-6 flex gap-3">
               <button
                 onClick={handleRestart}
-                className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
               >
                 Restart
               </button>
 
               <button
                 onClick={() => setStage("scenario")}
-                className="rounded-xl border border-gray-300 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-100"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
               >
                 Back to Scenario
               </button>
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
