@@ -5,7 +5,7 @@ type ModelType = "construction" | "medical";
 type ModeType = "upload" | "webcam";
 
 interface Detection {
-  class: string;
+  label: string;
   raw_class?: string;
   confidence: number;
   bbox: {
@@ -135,7 +135,7 @@ export default function TestPage() {
       ctx.lineWidth = 3;
       ctx.strokeRect(x1, y1, width, height);
 
-      const label = `${det.class} ${(conf * 100).toFixed(0)}%`;
+      const label = `${det.label} ${(conf * 100).toFixed(0)}%`;
       ctx.font = "bold 14px Arial";
       const textWidth = ctx.measureText(label).width;
       const textX = x1;
@@ -162,7 +162,7 @@ export default function TestPage() {
     activeModelType: ModelType
   ): ComplianceResult => {
     const required = REQUIRED_PPE[activeModelType];
-    const detectedSet = new Set(detections.map((d) => d.class));
+    const detectedSet = new Set(detections.map((d) => d.label));
     const missing = required.filter((item) => !detectedSet.has(item));
 
     return {
@@ -632,7 +632,7 @@ export default function TestPage() {
             ) : (
               activeResult.detections.map((det, idx) => (
                 <div key={idx} className={styles.detectionItem}>
-                  <span className={styles.class}>{det.class}</span>
+                  <span className={styles.class}>{det.label}</span>
                   <span className={styles.confidence}>
                     {(det.confidence * 100).toFixed(1)}%
                   </span>
