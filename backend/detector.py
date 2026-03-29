@@ -9,7 +9,7 @@ from PIL import Image
 from ultralytics import YOLO
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
-CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.6))
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.25))
 
 # ── Model cache ───────────────────────────────────────────
 
