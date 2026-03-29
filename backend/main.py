@@ -1,16 +1,17 @@
 # File: backend/main.py
-
 import os
-from contextlib import asynccontextmanager
-
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+load_dotenv()  # must be before everything else
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
 from classifier import classify, warm_cache, generate_scenario
 from scenarios import get_all, get_by_id
 from ppe_rules import grade
+from detector import run_detection
+
 
 load_dotenv()
 
@@ -93,4 +94,45 @@ def submit(body: SubmitRequest):
         "missing":     result["missing"],
         "extra":       result["extra"],
         "explanation": classification["explanation"],
+    }
+
+# ── File collection utility ─────────────────────────────────
+
+@app.post("/detect/upload")
+async def detect_upload(
+    file: UploadFile = File(...),
+    model_type: str = "medical"
+):
+    image_bytes = await file.read()
+    return run_detection(image_bytes, model_type)
+    
+# ── Combined detection and grading route ────────────────────────────────
+@app.post("/detect-and-grade")
+async def detect_and_grade(
+    scenario_text: str,
+    file: UploadFile = File(...),
+    model_type: str = "medical"
+):
+    if not scenario_text.strip():
+        raise HTTPException(status_code=400, detail="scenario_text cannot be empty")
+
+    image_bytes    = await file.read()
+    detection      = run_detection(image_bytes, model_type)
+    classification = classify(scenario_text)
+    detected_labels = [d["label"] for d in detection["detections"]]
+    result         = grade(classification["required"], detected_labels)
+
+    return {
+        "scenario":       scenario_text,
+        "category":       classification["category"],
+        "required":       classification["required"],
+        "explanation":    classification["explanation"],
+        "detections":     detection["detections"],
+        "low_confidence": detection["low_confidence"],
+        "num_detections": detection["num_detections"],
+        "elapsed_time":   detection["elapsed_time"],
+        "outcome":        result["outcome"],
+        "correct":        result["correct"],
+        "missing":        result["missing"],
+        "extra":          result["extra"],
     }
