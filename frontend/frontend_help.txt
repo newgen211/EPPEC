@@ -1,0 +1,245 @@
+# Frontend Structure Overview
+
+This frontend is organized to keep the app modular without overcomplicating the hackathon build. The goal is to separate UI, page flow, shared types, and helper logic so features like the WebSocket refactor can be added safely.
+
+## Folder Layout
+
+```text
+src/
+  components/
+    DetectionSidebar.tsx
+    StatusBanner.tsx
+
+  screens/
+    ModeSelectScreen.tsx
+    ScenarioScreen.tsx
+    CameraScreen.tsx
+    ResultsScreen.tsx
+
+  types/
+    api.ts
+    app.ts
+
+  utils/
+    apiClient.ts
+    detection.ts
+    labels.ts
+    timer.ts
+
+  App.tsx
+App.tsx
+
+Purpose: Main orchestrator for the frontend.
+
+What it does:
+
+Holds the top-level application state
+Controls screen/page transitions
+Manages selected mode and scenario
+Manages uploaded image state and preview
+Manages camera start/stop behavior
+Manages timer state for medical mode
+Sends detection/grading requests through the API client
+Passes state and handlers down to screens
+
+Why it exists:
+This is the central coordinator. It should contain app flow and shared state, but not large chunks of repeated UI.
+
+components/
+
+These are smaller reusable UI pieces used inside screens.
+
+components/DetectionSidebar.tsx
+
+Purpose: Displays live model detection feedback.
+
+What it does:
+
+Shows confidence bars for PPE items
+Shows raw detections from the model
+Displays whether vision is online, offline, or actively scanning
+
+Why it exists:
+This sidebar is reused as a focused visual block and keeps the camera screen cleaner.
+
+components/StatusBanner.tsx
+
+Purpose: Reusable alert/banner component.
+
+What it does:
+
+Displays messages with different tones:
+error
+warning
+info
+success
+
+Why it exists:
+Prevents repeated inline styling for status and error messages across screens.
+
+screens/
+
+These are the major frontend views/pages. Each screen represents one stage of the app flow.
+
+screens/ModeSelectScreen.tsx
+
+Purpose: First screen of the app.
+
+What it does:
+
+Lets the user choose between:
+hurricane / flood mode
+medical mode
+Displays initial loading or warning messages if needed
+
+Why it exists:
+Keeps the initial mode-selection UI separate from the rest of the app flow.
+
+screens/ScenarioScreen.tsx
+
+Purpose: Scenario selection screen.
+
+What it does:
+
+Shows medical scenario dropdown
+Supports selecting preset or AI-generated scenarios
+Shows selected scenario summary
+Allows navigation back or forward into the camera stage
+
+Why it exists:
+Separates scenario-selection logic from camera and results logic.
+
+screens/CameraScreen.tsx
+
+Purpose: Main live interaction screen.
+
+What it does:
+
+Handles uploaded image selection
+Shows camera controls
+Displays live video and overlay canvas
+Shows timer controls for medical mode
+Displays detection sidebar
+Allows image analysis and final submission
+
+Why it exists:
+This is the main operational screen. It is the future home of the WebSocket-connected live detection experience.
+
+screens/ResultsScreen.tsx
+
+Purpose: Final results/grading screen.
+
+What it does:
+
+Displays final outcome
+Shows required PPE
+Shows correct, missing, and extra items
+Shows final detections
+Allows user to go back or restart
+
+Why it exists:
+Keeps submission/grading output isolated from capture and scenario logic.
+
+types/
+
+These files define shared TypeScript types used across the frontend.
+
+types/api.ts
+
+Purpose: Backend-facing type definitions.
+
+What it contains:
+
+Scenario response types
+Detection response types
+Upload detection response types
+Final grading response types
+
+Why it exists:
+Ensures frontend code uses consistent shapes when working with backend data.
+
+types/app.ts
+
+Purpose: App-level internal types.
+
+What it contains:
+
+app stage type
+mode type
+shared UI-facing types like confidence objects
+
+Why it exists:
+Keeps general frontend state types separate from backend response types.
+
+utils/
+
+These are helper and service files. They contain pure logic or API helpers rather than UI.
+
+utils/apiClient.ts
+
+Purpose: Centralized API layer.
+
+What it does:
+
+Defines the backend base URL
+Wraps fetch inside reusable helpers
+Exposes functions for:
+loading scenarios
+generating AI scenarios
+upload detection
+detect-and-grade submission
+
+Why it exists:
+Keeps network logic out of UI files and makes future API changes easier.
+
+utils/detection.ts
+
+Purpose: Detection-related helper logic.
+
+What it does:
+
+Converts raw detections into sidebar confidence data
+Chooses color values for confidence bars
+
+Why it exists:
+Keeps detection formatting logic separate from rendering code.
+
+utils/labels.ts
+
+Purpose: PPE label formatting and constants.
+
+What it does:
+
+Stores frontend PPE option lists
+Maps backend/internal labels to display-friendly names
+
+Why it exists:
+Provides a single source of truth for label normalization and display names.
+
+utils/timer.ts
+
+Purpose: Timer calculation helpers.
+
+What it does:
+
+Computes required PPE count for medical scenarios
+Computes timer length based on scenario requirements
+
+Why it exists:
+Keeps timer rules separate from UI logic.
+
+Overall Design Philosophy
+
+This structure is intentionally lightweight:
+
+App.tsx = flow + state orchestration
+screens/ = full-page UI blocks
+components/ = smaller reusable UI pieces
+types/ = shared TypeScript contracts
+utils/ = API and pure helper logic
+
+This makes it easier to:
+
+debug individual parts of the app
+replace live detection internals later
+integrate WebSocket-based inference without rewriting the whole frontend

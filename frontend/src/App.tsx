@@ -1,28 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ModeSelectScreen from "./screens/ModeSelectScreen";
+import ScenarioScreen from "./screens/ScenarioScreen";
+import CameraScreen from "./screens/CameraScreen";
+import ResultsScreen from "./screens/ResultsScreen";
+
+import type { AppMode, AppStage, DetectionConfidence } from "./types/app";
+import type {
+  BackendScenario,
+  DetectAndGradeResponse,
+  Detection,
+} from "./types/api";
+
 import {
-  detectAndGrade,
-  detectUpload,
   fetchGeneratedScenario,
   fetchScenarios,
-  type BackendScenario,
-  type DetectAndGradeResponse,
-  type Detection,
-} from "./api";
-
-type AppStage = "modeSelect" | "scenario" | "camera" | "results";
-type AppMode = "hurricane" | "medical" | null;
-
-type DetectionConfidence = {
-  item: string;
-  confidence: number;
-};
+  detectAndGrade,
+  detectUpload,
+} from "./utils/apiClient";
+import { normalizeDetectionsToConfidence } from "./utils/detection";
+import {
+  CONSTRUCTION_PPE_OPTIONS,
+  MEDICAL_PPE_OPTIONS,
+} from "./utils/labels";
+import { getMedicalTimerSeconds } from "./utils/timer";
 
 const AI_SCENARIO_OPTION_ID = -1;
 
-const HURRICANE_SCENARIO: BackendScenario = {
+const CONSTRUCTION_SCENARIO: BackendScenario = {
   id: 1000,
-  text: "A responder is entering a flood-damaged area with contaminated standing water, debris, unstable surfaces, and possible exposure to mold and sharp objects.",
-  category: "Flood Response",
+  text: "A construction worker is entering a site with potential hazards.",
+  category: "Construction Response",
 };
 
 const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
@@ -53,99 +60,6 @@ const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
   },
 ];
 
-const MEDICAL_PPE_OPTIONS = [
-  "Gloves",
-  "Coverall",
-  "Mask",
-  "Eye Protection",
-  "Face Shield",
-];
-
-const CONSTRUCTION_PPE_OPTIONS = [
-  "Hard Hat",
-  "Gloves",
-  "Safety Vest",
-  "Eye Protection",
-];
-
-const LABEL_TO_DISPLAY: Record<string, string> = {
-  gloves: "Gloves",
-  coverall: "Coverall",
-  mask: "Mask",
-  goggles: "Eye Protection",
-  eye_protection: "Eye Protection",
-  face_shield: "Face Shield",
-  hard_hat: "Hard Hat",
-  safety_vest: "Safety Vest",
-};
-
-function getConfidenceColor(confidence: number): string {
-  if (confidence >= 75) return "#419D78";
-  if (confidence >= 40) return "#F5CB5C";
-  return "#4059AD";
-}
-
-function toDisplayLabel(label: string): string {
-  return LABEL_TO_DISPLAY[label] ?? label;
-}
-
-function getRequiredCountForTimer(
-  selectedScenario: BackendScenario | null,
-  mode: AppMode
-): number {
-  if (!selectedScenario || mode !== "medical") return 1;
-
-  if (selectedScenario.required?.length) {
-    return selectedScenario.required.length;
-  }
-
-  switch (selectedScenario.category) {
-    case "Standard":
-      return 1;
-    case "Contact":
-      return 2;
-    case "Droplet":
-      return 4;
-    case "Airborne":
-      return 4;
-    case "High-Risk":
-      return 5;
-    default:
-      return 1;
-  }
-}
-
-function getMedicalTimerSeconds(
-  selectedScenario: BackendScenario | null,
-  mode: AppMode
-): number {
-  const requiredCount = getRequiredCountForTimer(selectedScenario, mode);
-  return 30 + Math.max(0, requiredCount - 1) * 5;
-}
-
-function normalizeDetectionsToConfidence(
-  detections: Detection[],
-  options: string[]
-): DetectionConfidence[] {
-  const map = new Map<string, number>();
-
-  for (const option of options) {
-    map.set(option, 0);
-  }
-
-  for (const detection of detections) {
-    const displayLabel = toDisplayLabel(detection.label);
-    const confidence = Math.round(detection.confidence * 100);
-    const existing = map.get(displayLabel) ?? 0;
-    map.set(displayLabel, Math.max(existing, confidence));
-  }
-
-  return options.map((item) => ({
-    item,
-    confidence: map.get(item) ?? 0,
-  }));
-}
-
 export default function App() {
   const [stage, setStage] = useState<AppStage>("modeSelect");
   const [mode, setMode] = useState<AppMode>(null);
@@ -172,14 +86,14 @@ export default function App() {
   const [visionBusy, setVisionBusy] = useState(false);
   const [lastDetections, setLastDetections] = useState<Detection[]>([]);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  
   const [timerActive, setTimerActive] = useState(false);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const ppeOptions = useMemo(() => {
-    return mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
+    return mode === "construction" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
   }, [mode]);
 
   useEffect(() => {
@@ -187,7 +101,7 @@ export default function App() {
       ppeOptions.map((item) => ({
         item,
         confidence: 0,
-      }))
+      })),
     );
   }, [ppeOptions]);
 
@@ -207,7 +121,9 @@ export default function App() {
           setMedicalScenarios(scenariosResult.value);
         } else {
           setMedicalScenarios(FALLBACK_MEDICAL_SCENARIOS);
-          setErrorMessage("Backend scenarios could not be loaded. Using fallback medical scenarios.");
+          setErrorMessage(
+            "Backend scenarios could not be loaded. Using fallback medical scenarios.",
+          );
         }
 
         if (aiResult.status === "fulfilled") {
@@ -238,146 +154,95 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!uploadedImage) {
-      setPreviewUrl(null);
+    if (!videoRef.current || !cameraStream || !isCameraOn) return;
+    videoRef.current.srcObject = cameraStream;
+  }, [cameraStream, isCameraOn]);
+
+  useEffect(() => {
+    if (!timerActive) return;
+
+    if (timerSecondsLeft <= 0) {
+      setTimerActive(false);
       return;
     }
 
-    const objectUrl = URL.createObjectURL(uploadedImage);
-    setPreviewUrl(objectUrl);
+    const id = window.setTimeout(() => {
+      setTimerSecondsLeft((prev) => prev - 1);
+    }, 1000);
 
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [uploadedImage]);
+    return () => window.clearTimeout(id);
+  }, [timerActive, timerSecondsLeft]);
 
   useEffect(() => {
-    if (!isCameraOn || !cameraStream || !videoRef.current) return;
+    if (!isCameraOn) return;
 
-    const video = videoRef.current;
-    video.srcObject = cameraStream;
+    const intervalId = window.setInterval(() => {
+      void sendLiveFrameForDetection();
+    }, 1200);
 
-    const startPlayback = async () => {
-      try {
-        await video.play();
-      } catch (error) {
-        console.error("Video playback failed:", error);
-      }
-    };
-
-    void startPlayback();
-  }, [isCameraOn, cameraStream]);
+    return () => window.clearInterval(intervalId);
+  }, [isCameraOn, mode, uploadedImage, selectedScenario, visionBusy]);
 
   useEffect(() => {
     return () => {
-      cameraStream?.getTracks().forEach((track) => track.stop());
-    };
-  }, [cameraStream]);
-
-  useEffect(() => {
-    if (stage !== "camera" || !isCameraOn) return;
-
-    const interval = setInterval(() => {
-      void sendLiveFrameForDetection();
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [stage, isCameraOn, mode, ppeOptions]);
-
-  useEffect(() => {
-  if (!timerActive) return;
-
-  if (timerSecondsLeft <= 0) {
-    const autoCaptureAndSubmit = async () => {
-      setTimerActive(false);
-
-      const file = await capturePhotoFile();
-      if (!file) {
-        setErrorMessage("Could not capture image when timer ended.");
-        return;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
       }
-
-      await handleSubmit(file);
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+      }
     };
-
-    void autoCaptureAndSubmit();
-    return;
-  }
-
-  const timeout = setTimeout(() => {
-    setTimerSecondsLeft((prev) => prev - 1);
-  }, 1000);
-
-  return () => clearTimeout(timeout);
-}, [timerActive, timerSecondsLeft]);
-
-  const stopCamera = () => {
-    cameraStream?.getTracks().forEach((track) => track.stop());
-    setCameraStream(null);
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    setIsCameraOn(false);
-    setVisionBusy(false);
-    setTimerActive(false);
-    setTimerSecondsLeft(0);
-  };
+  }, [previewUrl, cameraStream]);
 
   const resetForNewRun = () => {
     stopCamera();
     setUploadedImage(null);
+    setPreviewUrl(null);
     setResult(null);
     setErrorMessage(null);
     setLastDetections([]);
     setVisionOnline(false);
+    setVisionBusy(false);
+    setTimerActive(false);
+    setTimerSecondsLeft(0);
     setLiveConfidences(
       ppeOptions.map((item) => ({
         item,
         confidence: 0,
-      }))
+      })),
     );
-    setTimerActive(false);
-    setTimerSecondsLeft(0);
   };
 
-  const handleSelectMode = (selectedMode: AppMode) => {
+  const handleSelectMode = (nextMode: "construction" | "medical") => {
     resetForNewRun();
-    setMode(selectedMode);
+    setMode(nextMode);
 
-    if (selectedMode === "hurricane") {
-      setSelectedScenario(HURRICANE_SCENARIO);
-      setSelectedMedicalScenarioId(null);
+    if (nextMode === "construction") {
+      setSelectedScenario(CONSTRUCTION_SCENARIO);
     } else {
-      const firstScenario = medicalScenarios[0] ?? aiScenario ?? null;
-      setSelectedScenario(firstScenario);
-      setSelectedMedicalScenarioId(firstScenario?.id ?? null);
+      setSelectedScenario(null);
     }
-    
-    setTimerActive(false);
-    setTimerSecondsLeft(0);
 
     setStage("scenario");
   };
 
-  const handleMedicalScenarioChange = (
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const selectedId = Number(event.target.value);
-
-    setResult(null);
-    setErrorMessage(null);
-
-    if (selectedId === AI_SCENARIO_OPTION_ID && aiScenario) {
-      setSelectedScenario(aiScenario);
-      setSelectedMedicalScenarioId(AI_SCENARIO_OPTION_ID);
-      return;
-    }
-
+  const handleMedicalScenarioChange = (selectedId: number) => {
     const foundScenario =
-      medicalScenarios.find((scenario) => scenario.id === selectedId) ?? null;
+      selectedId === AI_SCENARIO_OPTION_ID
+        ? aiScenario
+        : medicalScenarios.find((scenario) => scenario.id === selectedId) ?? null;
 
     setSelectedScenario(foundScenario);
     setSelectedMedicalScenarioId(selectedId);
+  };
+
+  const handleStartScenario = () => {
+    if (!selectedScenario) {
+      setErrorMessage("Please select a scenario first.");
+      return;
+    }
+    setErrorMessage(null);
+    setStage("camera");
   };
 
   const handleRestart = () => {
@@ -391,6 +256,7 @@ export default function App() {
   const handleBackToScenario = () => {
     stopCamera();
     setUploadedImage(null);
+    setPreviewUrl(null);
     setResult(null);
     setErrorMessage(null);
     setLastDetections([]);
@@ -399,7 +265,7 @@ export default function App() {
       ppeOptions.map((item) => ({
         item,
         confidence: 0,
-      }))
+      })),
     );
     setStage("scenario");
   };
@@ -409,6 +275,16 @@ export default function App() {
     setUploadedImage(file);
     setResult(null);
     setErrorMessage(null);
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    if (file) {
+      setPreviewUrl(URL.createObjectURL(file));
+    } else {
+      setPreviewUrl(null);
+    }
   };
 
   const startCamera = async () => {
@@ -421,98 +297,99 @@ export default function App() {
       setCameraStream(stream);
       setIsCameraOn(true);
       setVisionOnline(false);
+      setErrorMessage(null);
     } catch (error) {
       console.error(error);
-      alert("Unable to access the camera. Please allow camera permissions.");
+      setErrorMessage("Unable to access the camera. Please allow camera permissions.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+    }
+
+    setCameraStream(null);
+    setIsCameraOn(false);
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   };
 
   const capturePhotoFile = async (): Promise<File | null> => {
-  if (!videoRef.current || !canvasRef.current) return null;
-
-  const video = videoRef.current;
-  const canvas = canvasRef.current;
-  const context = canvas.getContext("2d");
-
-  if (!context) return null;
-  if (video.videoWidth === 0 || video.videoHeight === 0) return null;
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-
-  context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((value) => resolve(value), "image/jpeg", 0.95);
-  });
-
-  if (!blob) return null;
-
-  return new File([blob], "timer-capture.jpg", { type: "image/jpeg" });
-};
-
-  const capturePhoto = async () => {
-  const file = await capturePhotoFile();
-  if (!file) return;
-  setUploadedImage(file);
-};
-
-const handleStartMedicalTimer = () => {
-  if (mode !== "medical") return;
-
-  if (!isCameraOn) {
-    setErrorMessage("Please open the live camera before starting the timer.");
-    return;
-  }
-
-  if (!selectedScenario) {
-    setErrorMessage("No scenario selected.");
-    return;
-  }
-
-  setErrorMessage(null);
-  setTimerSecondsLeft(getMedicalTimerSeconds(selectedScenario, mode));
-  setTimerActive(true);
-};
-
-const handleCancelMedicalTimer = () => {
-  setTimerActive(false);
-  setTimerSecondsLeft(0);
-};
-
-  const sendLiveFrameForDetection = async () => {
-    if (visionBusy) return;
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current) return null;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-
-    if (video.videoWidth === 0 || video.videoHeight === 0) return;
-
     const context = canvas.getContext("2d");
-    if (!context) return;
+
+    if (!context) return null;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    setVisionBusy(true);
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((value) => resolve(value), "image/jpeg", 0.95);
+    });
+
+    if (!blob) return null;
+
+    return new File([blob], "timer-capture.jpg", { type: "image/jpeg" });
+  };
+
+  const capturePhoto = async () => {
+    const file = await capturePhotoFile();
+    if (!file) return;
+    setUploadedImage(file);
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleStartMedicalTimer = () => {
+    if (mode !== "medical") return;
+
+    if (!isCameraOn) {
+      setErrorMessage("Please open the live camera before starting the timer.");
+      return;
+    }
+
+    if (!selectedScenario) {
+      setErrorMessage("No scenario selected.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setTimerSecondsLeft(getMedicalTimerSeconds(selectedScenario, mode));
+    setTimerActive(true);
+  };
+
+  const handleCancelMedicalTimer = () => {
+    setTimerActive(false);
+    setTimerSecondsLeft(0);
+  };
+
+  const sendLiveFrameForDetection = async () => {
+    if (visionBusy) return;
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const file = await capturePhotoFile();
+    if (!file) return;
+
+    const modelType = mode === "construction" ? "construction" : "medical";
 
     try {
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((value) => resolve(value), "image/jpeg", 0.8);
-      });
+      setVisionBusy(true);
+      const response = await detectUpload(file, modelType);
 
-      if (!blob) return;
-
-      const liveFile = new File([blob], "live-frame.jpg", { type: "image/jpeg" });
-      const modelType = mode === "hurricane" ? "construction" : "medical";
-
-      const data = await detectUpload(liveFile, modelType);
-
-      setLastDetections(data.detections);
+      setLastDetections(response.detections);
       setLiveConfidences(
-        normalizeDetectionsToConfidence(data.detections, ppeOptions)
+        normalizeDetectionsToConfidence(response.detections, ppeOptions),
       );
       setVisionOnline(true);
     } catch (error) {
@@ -523,494 +400,142 @@ const handleCancelMedicalTimer = () => {
     }
   };
 
-  const handleSubmit = async (overrideFile?: File) => {
-  if (!selectedScenario) return;
-
-  const fileToSubmit = overrideFile ?? uploadedImage;
-
-  if (!fileToSubmit) {
-    setErrorMessage("Please upload or capture an image before submitting.");
-    return;
-  }
-
-  if (mode === "hurricane") {
-    setErrorMessage(
-      "The new detect-and-grade backend route is currently medical-mode only. Live construction detection is wired, but final grading still needs a construction grading route."
-    );
-    return;
-  }
-
-  try {
-    setSubmitting(true);
-    setErrorMessage(null);
-
-    const formData = new FormData();
-    formData.append("file", fileToSubmit);
-
-    const response = await fetch(
-      `http://localhost:8000/detect-and-grade?scenario_text=${encodeURIComponent(
-        selectedScenario.text
-      )}&model_type=medical`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Error ${response.status}: ${text}`);
+  const handleRunUploadDetection = async () => {
+    if (!uploadedImage) {
+      setErrorMessage("Please upload or capture an image first.");
+      return;
     }
 
-    const data = await response.json();
+    const modelType = mode === "construction" ? "construction" : "medical";
 
-    setUploadedImage(fileToSubmit);
-    setResult(data);
-    setLastDetections(data.detections);
-    setVisionOnline(true);
-    setStage("results");
-  } catch (error) {
-    console.error(error);
+    try {
+      setErrorMessage(null);
+      setVisionBusy(true);
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to submit image to the backend.";
+      const response = await detectUpload(uploadedImage, modelType);
 
-    setErrorMessage(message);
-  } finally {
-    setSubmitting(false);
-  }
-};
+      setLastDetections(response.detections);
+      setLiveConfidences(
+        normalizeDetectionsToConfidence(response.detections, ppeOptions),
+      );
+      setVisionOnline(true);
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to analyze the selected image.");
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
+  const handleSubmitFinal = async () => {
+    if (!uploadedImage) {
+      setErrorMessage("Please upload or capture an image first.");
+      return;
+    }
+
+    if (!selectedScenario) {
+      setErrorMessage("No scenario selected.");
+      return;
+    }
+
+    const modelType = mode === "construction" ? "construction" : "medical";
+
+    try {
+      setSubmitting(true);
+      setErrorMessage(null);
+
+      const response = await detectAndGrade(
+        uploadedImage,
+        modelType,
+        selectedScenario.text,
+      );
+
+      setResult(response);
+      setStage("results");
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to submit final grading request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]">
-      <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-5">
-        <div className="mx-auto max-w-5xl">
-          <h1 className="text-3xl font-bold text-[#E2CFEA]">
-            PPE Scenario Classifier
-          </h1>
-          <p className="mt-1 text-sm text-[#E2CFEA]/90">
-            Emergency responder PPE verification and training
-          </p>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        {stage === "modeSelect" && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <h2 className="mb-4 text-2xl font-semibold">Choose Test Mode</h2>
-            <p className="mb-6 text-[#2E1F27]/75">
-              Select which PPE workflow you want to test.
-            </p>
-
-            {(loadingScenarios || loadingAiScenario) && (
-              <div className="mb-4 rounded-xl border-2 border-[#4059AD] bg-[#E2CFEA] px-4 py-3">
-                Loading medical scenarios...
-              </div>
-            )}
-
-            {errorMessage && (
-              <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
-                {errorMessage}
-              </div>
-            )}
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div
-                onClick={() => handleSelectMode("hurricane")}
-                className="cursor-pointer rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-5 transition hover:border-[#419D78]"
-              >
-                <div className="mb-2 text-lg font-semibold">
-                  General PPE for Hurricane Flood Response
-                </div>
-                <p className="text-sm text-[#2E1F27]/75">
-                  Uses the construction detector for live model inference.
-                </p>
-              </div>
-
-              <div
-                onClick={() => {
-                  if (
-                    !loadingScenarios &&
-                    !loadingAiScenario &&
-                    (medicalScenarios.length > 0 || aiScenario)
-                  ) {
-                    handleSelectMode("medical");
-                  }
-                }}
-                className={`rounded-2xl border-2 bg-[#E2CFEA] p-5 transition ${
-                  loadingScenarios || loadingAiScenario
-                    ? "cursor-not-allowed border-[#2E1F27] opacity-50"
-                    : "cursor-pointer border-[#2E1F27] hover:border-[#419D78]"
-                }`}
-              >
-                <div className="mb-2 text-lg font-semibold">Medical PPE</div>
-                <p className="text-sm text-[#2E1F27]/75">
-                  Uses backend scenarios and model-based detect-and-grade.
-                </p>
-              </div>
-            </div>
+    <div className="min-h-screen bg-[#F9F4F1] px-4 py-8 text-[#2E1F27]">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8 text-center">
+          <div className="mb-2 text-sm font-medium uppercase tracking-[0.3em] text-[#4059AD]">
+            Computer Vision Hackathon
           </div>
+          <h1 className="text-4xl font-bold">EPPEC</h1>
+          <p className="mt-3 text-[#2E1F27]/75">
+            PPE scenario training with image upload, live camera capture, and backend grading.
+          </p>
+          {submitting && (
+            <p className="mt-2 text-sm text-[#4059AD]">Submitting final grading...</p>
+          )}
+        </header>
+
+        {stage === "modeSelect" && (
+          <ModeSelectScreen
+            loadingScenarios={loadingScenarios}
+            loadingAiScenario={loadingAiScenario}
+            errorMessage={errorMessage}
+            onSelectMode={handleSelectMode}
+          />
         )}
 
-        {stage === "scenario" && selectedScenario && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
-              {mode === "hurricane"
-                ? "General PPE for Hurricane Flood Response"
-                : "Medical PPE"}
-            </div>
-
-            <h2 className="mb-3 text-2xl font-semibold">Scenario</h2>
-
-            {mode === "medical" && (
-              <div className="mb-4">
-                <label className="mb-2 block text-sm font-medium">
-                  Choose a medical scenario
-                </label>
-                <select
-                  value={selectedMedicalScenarioId ?? ""}
-                  onChange={handleMedicalScenarioChange}
-                  disabled={loadingAiScenario}
-                  className="w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-3 py-3"
-                >
-                  {medicalScenarios.map((scenario) => (
-                    <option key={scenario.id} value={scenario.id}>
-                      {scenario.text}
-                    </option>
-                  ))}
-                  {aiScenario && (
-                    <option value={AI_SCENARIO_OPTION_ID}>
-                      {aiScenario.text}
-                    </option>
-                  )}
-                </select>
-              </div>
-            )}
-
-            <div className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-              <p className="leading-7">{selectedScenario.text}</p>
-            </div>
-
-            {errorMessage && (
-              <div className="mt-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
-                {errorMessage}
-              </div>
-            )}
-
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => setStage("camera")}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
-              >
-                Start PPE Challenge
-              </button>
-
-              <button
-                onClick={handleRestart}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
-              >
-                Back
-              </button>
-            </div>
-          </div>
+        {stage === "scenario" && (
+          <ScenarioScreen
+            mode={mode}
+            selectedScenario={selectedScenario}
+            selectedMedicalScenarioId={selectedMedicalScenarioId}
+            medicalScenarios={medicalScenarios}
+            aiScenario={aiScenario}
+            loadingAiScenario={loadingAiScenario}
+            errorMessage={errorMessage}
+            onMedicalScenarioChange={handleMedicalScenarioChange}
+            onBack={handleRestart}
+            onStart={handleStartScenario}
+          />
         )}
 
         {stage === "camera" && selectedScenario && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
-              {mode === "hurricane"
-                ? "General PPE for Hurricane Flood Response"
-                : "Medical PPE"}
-            </div>
-
-            <h2 className="mb-3 text-2xl font-semibold">
-              Live Camera Detection
-            </h2>
-            <p className="mb-6 text-[#2E1F27]/75">
-              The live camera feed now calls the backend model route directly.
-              Final grading uses the new detect-and-grade API.
-            </p>
-
-            {errorMessage && (
-              <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
-                {errorMessage}
-              </div>
-            )}
-
-            <div className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
-              <div>
-                <label className="mb-4 block">
-                  <span className="mb-2 block text-sm font-medium">
-                    Upload Image
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-3 text-sm file:mr-4 file:rounded-lg file:border-2 file:border-[#2E1F27] file:bg-[#F5CB5C] file:px-4 file:py-2 file:text-sm file:font-medium hover:file:brightness-95"
-                  />
-                </label>
-
-                <div className="mb-4 flex flex-wrap gap-3">
-                  {!isCameraOn ? (
-                    <button
-                      onClick={startCamera}
-                      className="rounded-xl border-2 border-[#2E1F27] bg-[#4059AD] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
-                    >
-                      Open Live Camera
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => void capturePhoto()}
-                        className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
-                      >
-                        Capture Snapshot
-                      </button>
-
-                      {mode === "medical" ? (
-                        timerActive ? (
-                          <button
-                            onClick={handleCancelMedicalTimer}
-                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
-                          >
-                            Cancel Timer ({timerSecondsLeft}s)
-                          </button>
-                        ) : (
-                          <button
-                            onClick={handleStartMedicalTimer}
-                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
-                          >
-                            Start Timer ({getMedicalTimerSeconds(selectedScenario, mode)}s)
-                          </button>
-                        )
-                      ) : (
-                        <button
-                          onClick={() => void sendLiveFrameForDetection()}
-                          className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
-                        >
-                          Run Detection Now
-                        </button>
-                      )}
-
-                      <button
-                        onClick={stopCamera}
-                        className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
-                      >
-                        Stop Camera
-                      </button>
-                    </>
-                  )}
-                </div>
-                
-                {mode === "medical" && (
-                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium">Timed Medical PPE Challenge</div>
-                        <div className="text-sm text-[#2E1F27]/75">
-                          Base 30 seconds, plus 5 seconds for each additional required item.
-                        </div>
-                      </div>
-                      <div className="text-2xl font-bold">
-                        {timerActive
-                          ? `${timerSecondsLeft}s`
-                          : `${getMedicalTimerSeconds(selectedScenario, mode)}s`}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {isCameraOn && (
-                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-black p-2">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="block w-full rounded-lg"
-                    />
-                  </div>
-                )}
-
-                <canvas ref={canvasRef} className="hidden" />
-
-                <div className="mb-6 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA]">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt="PPE preview"
-                      className="h-80 w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-80 items-center justify-center text-[#2E1F27]/65">
-                      No captured or uploaded image selected
-                    </div>
-                  )}
-                </div>
-
-                
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => void handleSubmit()}
-                    disabled={submitting}
-                    className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
-                      submitting
-                        ? "cursor-not-allowed bg-[#2E1F27]/20"
-                        : "bg-[#F5CB5C] hover:brightness-95"
-                    }`}
-                  >
-                    {submitting ? "Processing..." : "Submit Image"}
-                  </button>
-
-                  <button
-                    onClick={handleBackToScenario}
-                    className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
-                  >
-                    Back
-                  </button>
-                </div>
-              </div>
-
-              <aside className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-  <div className="mb-4 flex items-center justify-between gap-3">
-    <h3 className="text-lg font-semibold">Latest Model Detections</h3>
-    <span
-      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-        visionOnline
-          ? "border-[#419D78] text-[#419D78]"
-          : "border-[#4059AD] text-[#4059AD]"
-      }`}
-    >
-      {visionOnline ? "Vision Online" : "Waiting for Detection"}
-    </span>
-  </div>
-
-  {lastDetections.length > 0 ? (
-    <div className="space-y-3">
-      {lastDetections.map((detection, index) => (
-        <div
-          key={`${detection.label}-${index}`}
-          className="rounded-lg border-2 border-[#2E1F27] px-3 py-3"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium">
-              {toDisplayLabel(detection.label)}
-            </span>
-            <span className="text-sm font-semibold">
-              {Math.round(detection.confidence * 100)}%
-            </span>
-          </div>
-
-          {detection.raw_class && detection.raw_class !== detection.label && (
-            <div className="mt-1 text-xs text-[#2E1F27]/70">
-              Raw class: {detection.raw_class}
-            </div>
-          )}
-
-          <div className="mt-2 text-xs text-[#2E1F27]/70">
-            Box: x1 {detection.bbox.x1}, y1 {detection.bbox.y1}, x2 {detection.bbox.x2}, y2 {detection.bbox.y2}
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div className="rounded-lg border-2 border-dashed border-[#2E1F27] px-4 py-6 text-sm text-[#2E1F27]/70">
-      No detections yet. Run live detection or submit an image.
-    </div>
-  )}
-
-  
-</aside>
-            </div>
-          </div>
+          <CameraScreen
+            mode={mode}
+            selectedScenario={selectedScenario}
+            errorMessage={errorMessage}
+            uploadedImage={uploadedImage}
+            previewUrl={previewUrl}
+            isCameraOn={isCameraOn}
+            timerActive={timerActive}
+            timerSecondsLeft={timerSecondsLeft}
+            visionOnline={visionOnline}
+            visionBusy={visionBusy}
+            liveConfidences={liveConfidences}
+            lastDetections={lastDetections}
+            videoRef={videoRef}
+            canvasRef={canvasRef}
+            onBack={handleBackToScenario}
+            onImageChange={handleImageChange}
+            onStartCamera={startCamera}
+            onStopCamera={stopCamera}
+            onCapturePhoto={capturePhoto}
+            onRunUploadDetection={handleRunUploadDetection}
+            onSubmitFinal={handleSubmitFinal}
+            onStartMedicalTimer={handleStartMedicalTimer}
+            onCancelMedicalTimer={handleCancelMedicalTimer}
+          />
         )}
 
         {stage === "results" && result && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
-              {mode === "hurricane"
-                ? "General PPE for Hurricane Flood Response"
-                : "Medical PPE"}
-            </div>
-
-            <h2 className="mb-4 text-2xl font-semibold">Results</h2>
-
-            {previewUrl && (
-              <div className="mb-5 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-                <p className="mb-3 text-sm font-medium">Submitted Image</p>
-                <img
-                  src={previewUrl}
-                  alt="Submitted PPE"
-                  className="max-h-72 w-full rounded-lg object-contain"
-                />
-              </div>
-            )}
-
-            <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3">
-              <span className="font-semibold">Outcome:</span> {result.outcome}
-            </div>
-
-            <div className="space-y-2 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-              <p>
-                <span className="font-semibold">Category:</span> {result.category}
-              </p>
-              <p>
-                <span className="font-semibold">Required:</span>{" "}
-                {result.required.join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Detected:</span>{" "}
-                {result.detections.map((d) => toDisplayLabel(d.label)).join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Correct:</span>{" "}
-                {result.correct.join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Missing:</span>{" "}
-                {result.missing.join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Extra:</span>{" "}
-                {result.extra.join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Low Confidence:</span>{" "}
-                {result.low_confidence.map((label) => toDisplayLabel(label)).join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Detections:</span> {result.num_detections}
-              </p>
-              <p>
-                <span className="font-semibold">Inference Time:</span> {result.elapsed_time}s
-              </p>
-              <p>
-                <span className="font-semibold">Why:</span> {result.explanation}
-              </p>
-            </div>
-
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={handleRestart}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
-              >
-                Restart
-              </button>
-
-              <button
-                onClick={() => setStage("scenario")}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
-              >
-                Back to Scenario
-              </button>
-            </div>
-          </div>
+          <ResultsScreen
+            result={result}
+            onRestart={handleRestart}
+            onBack={handleBackToScenario}
+          />
         )}
-      </main>
+      </div>
     </div>
   );
 }
