@@ -1,3 +1,5 @@
+// File: frontend/src/types/index.ts
+
 // ── Shared application types ──────────────────────────────
 
 export type AppStage = "modeSelect" | "scenario" | "camera" | "results";

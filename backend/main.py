@@ -1,18 +1,25 @@
+# File: backend/main.py
+
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import base64
 
 from test_detector import run_detection as test_run_detection
-from detector import run_detection as app_run_detection
-
 from pydantic import BaseModel
 from classifier import classify, warm_cache, generate_scenario
 from scenarios import get_all, get_by_id
 from ppe_rules import grade
-from detector import run_detection
 
 
-app = FastAPI(title="EPPEC API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    warm_cache()   # pre-classify all hardcoded scenarios on startup
+    yield
+
+
+app = FastAPI(title="EPPEC API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
