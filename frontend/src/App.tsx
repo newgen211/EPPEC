@@ -451,140 +451,209 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────
 
+  // ── Category badge colours ───────────────────────────────
+  const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+    Standard:  { bg: "#419D78",  text: "#fff",     border: "#419D78"  },
+    Contact:   { bg: "#4059AD",  text: "#fff",     border: "#4059AD"  },
+    Droplet:   { bg: "#F5CB5C",  text: "#2E1F27",  border: "#F5CB5C"  },
+    Airborne:  { bg: "#E07A5F",  text: "#fff",     border: "#E07A5F"  },
+    "High-Risk":{ bg: "#C62828", text: "#fff",     border: "#C62828"  },
+    AI:        { bg: "#7B2D8B",  text: "#fff",     border: "#7B2D8B"  },
+  };
+
+  const allScenarioCards = [
+    ...medicalScenarios,
+    ...(aiScenario ? [{ ...aiScenario, id: AI_SCENARIO_OPTION_ID, _isAi: true }] : []),
+  ] as (BackendScenario & { _isAi?: boolean })[];
+
   return (
     <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]">
-      <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-5">
-        <div className="mx-auto max-w-5xl">
-          <h1 className="text-3xl font-bold text-[#E2CFEA]">EPPEC</h1>
-          <p className="mt-1 text-sm text-[#E2CFEA]/90">Employee Personal Protection Equipment Checker</p>
+
+      {/* ── Header ───────────────────────────────────────────── */}
+      <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#E2CFEA]/40 bg-[#E2CFEA]/10 text-xl">
+              🛡️
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold leading-none text-[#E2CFEA]">EPPEC</h1>
+              <p className="text-xs text-[#E2CFEA]/70">Personal Protection Equipment Checker</p>
+            </div>
+          </div>
+          {/* Stage breadcrumb */}
+          <div className="hidden items-center gap-2 text-xs font-medium text-[#E2CFEA]/60 sm:flex">
+            {(["modeSelect","scenario","camera","results"] as AppStage[]).map((s, i) => (
+              <span key={s} className="flex items-center gap-2">
+                {i > 0 && <span>›</span>}
+                <span className={stage === s ? "text-[#F5CB5C]" : ""}>
+                  {s === "modeSelect" ? "Mode" : s === "scenario" ? "Scenario" : s === "camera" ? "Camera" : "Results"}
+                </span>
+              </span>
+            ))}
+          </div>
         </div>
       </header>
 
-      {/* Hurricane "must leave" overlay */}
+      {/* ── Hurricane "must leave" overlay ───────────────────── */}
       {mustLeaveOverlay && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black">
-          <div className="px-6 text-center text-white">
-            <h2 className="text-4xl font-bold">You need to leave</h2>
+        <>
+          <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 bg-black">
+            <div className="text-8xl">⚠️</div>
+            <h2 className="text-5xl font-black tracking-tight text-white">You must leave now.</h2>
+            <p className="text-lg text-white/60">PPE non-compliance detected — area unsafe.</p>
           </div>
-        </div>
-      )}
-      {mustLeaveOverlay && (
-        <button
-          onClick={handleRestart}
-          className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-xl border-2 border-white bg-[#F5CB5C] px-6 py-3 font-medium text-[#2E1F27] transition hover:brightness-95"
-        >
-          Restart
-        </button>
+          <button
+            onClick={handleRestart}
+            className="fixed bottom-10 left-1/2 z-50 -translate-x-1/2 rounded-xl border-2 border-white bg-[#F5CB5C] px-8 py-3 font-bold text-[#2E1F27] transition hover:brightness-95"
+          >
+            ← Restart
+          </button>
+        </>
       )}
 
       <main className="mx-auto max-w-5xl px-6 py-8">
-        {/* ── Mode Select ── */}
+
+        {/* ── Mode Select ──────────────────────────────────────── */}
         {stage === "modeSelect" && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <h2 className="mb-4 text-2xl font-semibold">Choose Test Mode</h2>
-            <p className="mb-6 text-[#2E1F27]/75">Select which PPE workflow you want to test.</p>
+          <div>
+            <div className="mb-8 text-center">
+              <h2 className="mb-2 text-3xl font-bold">Choose a Mode</h2>
+              <p className="text-[#2E1F27]/60">Select the PPE workflow to run the live check against.</p>
+            </div>
 
             {(loadingScenarios || loadingAiScenario) && (
-              <div className="mb-4 rounded-xl border-2 border-[#4059AD] bg-[#E2CFEA] px-4 py-3 text-sm">
-                Loading medical scenarios…
+              <div className="mb-4 flex items-center gap-3 rounded-xl border-2 border-[#4059AD] bg-[#E2CFEA] px-4 py-3 text-sm">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#4059AD] border-t-transparent" />
+                Loading scenarios…
               </div>
             )}
             {errorMessage && (
               <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3 text-sm">{errorMessage}</div>
             )}
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div
+            <div className="grid gap-5 md:grid-cols-2">
+              {/* Hurricane card */}
+              <button
                 onClick={() => handleSelectMode("hurricane")}
-                className="cursor-pointer rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-5 transition hover:border-[#419D78]"
+                className="group flex flex-col rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 text-left transition hover:border-[#419D78] hover:shadow-lg"
               >
-                <div className="mb-2 text-lg font-semibold">Hurricane Flood Response</div>
-                <p className="text-sm text-[#2E1F27]/75">Live construction-model detection with helmet/vest safety checks.</p>
-              </div>
-              <div
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#4059AD] text-3xl transition group-hover:scale-105">
+                  🌊
+                </div>
+                <div className="mb-1 text-xl font-bold">Hurricane Response</div>
+                <p className="mb-4 flex-1 text-sm text-[#2E1F27]/65">
+                  Live construction-model detection. Vest without a hard hat triggers a countdown evacuation warning.
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#4059AD] px-3 py-0.5 text-xs font-semibold text-white">Construction model</span>
+                  <span className="rounded-full bg-[#2E1F27]/10 px-3 py-0.5 text-xs font-semibold text-[#2E1F27]/60">Live only</span>
+                </div>
+              </button>
+
+              {/* Medical card */}
+              <button
                 onClick={() => {
                   if (!loadingScenarios && !loadingAiScenario && (medicalScenarios.length > 0 || aiScenario)) {
                     handleSelectMode("medical");
                   }
                 }}
-                className={`rounded-2xl border-2 p-5 transition ${
-                  loadingScenarios || loadingAiScenario
-                    ? "cursor-not-allowed border-[#2E1F27] opacity-50"
-                    : "cursor-pointer border-[#2E1F27] hover:border-[#419D78]"
-                }`}
+                disabled={loadingScenarios || loadingAiScenario}
+                className="group flex flex-col rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 text-left transition hover:border-[#419D78] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <div className="mb-2 text-lg font-semibold">Medical PPE</div>
-                <p className="text-sm text-[#2E1F27]/75">Select a clinical scenario, then let the camera verify your PPE.</p>
-              </div>
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#419D78] text-3xl transition group-hover:scale-105">
+                  🏥
+                </div>
+                <div className="mb-1 text-xl font-bold">Medical PPE</div>
+                <p className="mb-4 flex-1 text-sm text-[#2E1F27]/65">
+                  Pick a clinical scenario, don your PPE, then capture a photo or race the timer to get graded.
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#419D78] px-3 py-0.5 text-xs font-semibold text-white">Medical model</span>
+                  <span className="rounded-full bg-[#2E1F27]/10 px-3 py-0.5 text-xs font-semibold text-[#2E1F27]/60">Timed challenge</span>
+                </div>
+              </button>
             </div>
           </div>
         )}
 
-        {/* ── Scenario Select ── */}
+        {/* ── Scenario Select ──────────────────────────────────── */}
         {stage === "scenario" && selectedScenario && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">Medical PPE</div>
-            <h2 className="mb-3 text-2xl font-semibold">Choose a Scenario</h2>
-
-            {/* FIX: show scenario text in options, not just category */}
-            <div className="mb-4">
-              <label className="mb-2 block text-sm font-medium">Select a clinical scenario</label>
-              <select
-                value={selectedMedicalScenarioId ?? ""}
-                onChange={handleMedicalScenarioChange}
-                disabled={loadingAiScenario}
-                className="w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-3 py-3"
-              >
-                {medicalScenarios.map((scenario) => (
-                  <option key={scenario.id} value={scenario.id}>
-                    [{scenario.category}] {truncate(scenario.text)}
-                  </option>
-                ))}
-                {aiScenario && (
-                  <option value={AI_SCENARIO_OPTION_ID}>
-                    [AI] {truncate(aiScenario.text)}
-                  </option>
-                )}
-              </select>
-            </div>
-
-            {/* Full scenario text */}
-            <div className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-              <p className="leading-7">{selectedScenario.text}</p>
+          <div>
+            <div className="mb-6">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#4059AD]">Medical PPE</div>
+              <h2 className="text-3xl font-bold">Pick a Scenario</h2>
             </div>
 
             {errorMessage && (
-              <div className="mt-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3 text-sm">{errorMessage}</div>
+              <div className="mb-4 rounded-xl border-2 border-[#F5CB5C] bg-[#E2CFEA] px-4 py-3 text-sm">{errorMessage}</div>
             )}
 
-            <div className="mt-6 flex gap-3">
+            {/* Clickable scenario cards */}
+            <div className="mb-6 space-y-3">
+              {allScenarioCards.map((scenario) => {
+                const catKey = scenario._isAi ? "AI" : scenario.category;
+                const colors = CATEGORY_COLORS[catKey] ?? CATEGORY_COLORS["Standard"];
+                const isSelected = selectedMedicalScenarioId === scenario.id;
+                return (
+                  <button
+                    key={scenario.id}
+                    onClick={() => {
+                      setResult(null);
+                      setErrorMessage(null);
+                      setSelectedScenario(scenario);
+                      setSelectedMedicalScenarioId(scenario.id);
+                    }}
+                    className={`flex w-full items-start gap-4 rounded-xl border-2 p-4 text-left transition hover:shadow-md ${
+                      isSelected
+                        ? "border-[#4059AD] bg-[#4059AD]/10 shadow-sm"
+                        : "border-[#2E1F27]/20 bg-[#E2CFEA] hover:border-[#4059AD]/50"
+                    }`}
+                  >
+                    {/* Category badge */}
+                    <span
+                      className="mt-0.5 flex-shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold"
+                      style={{ backgroundColor: colors.bg, color: colors.text }}
+                    >
+                      {catKey}
+                    </span>
+                    <span className="flex-1 text-sm leading-relaxed">{scenario.text}</span>
+                    {isSelected && (
+                      <span className="mt-0.5 flex-shrink-0 text-[#4059AD]">✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3">
               <button
                 onClick={() => setStage("camera")}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-5 py-2.5 font-semibold transition hover:brightness-95"
               >
-                Start PPE Challenge
+                Start PPE Challenge →
               </button>
               <button
                 onClick={handleRestart}
-                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
+                className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-5 py-2.5 font-medium transition hover:border-[#419D78]"
               >
-                Back
+                ← Back
               </button>
             </div>
           </div>
         )}
 
-        {/* ── Camera Stage ── */}
+        {/* ── Camera Stage ─────────────────────────────────────── */}
         {stage === "camera" && selectedScenario && (
           <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
-            <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
-              {mode === "hurricane" ? "Hurricane Flood Response" : "Medical PPE"}
+            <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#4059AD]">
+              {mode === "hurricane" ? "Hurricane Response" : "Medical PPE"}
             </div>
-            <h2 className="mb-1 text-2xl font-semibold">Live Camera Detection</h2>
-            <p className="mb-5 text-sm text-[#2E1F27]/75">
+            <h2 className="mb-1 text-2xl font-bold">Live Detection</h2>
+            <p className="mb-5 text-sm text-[#2E1F27]/60">
               {mode === "hurricane"
-                ? "Stand in front of the camera in your PPE. A vest without a hard hat triggers a warning."
-                : "Put on your PPE, then capture a photo or start the timed challenge."}
+                ? "Vest without a hard hat triggers a 5-second evacuation countdown."
+                : "Put on your PPE, then capture or start the timed challenge."}
             </p>
 
             {errorMessage && (
@@ -592,92 +661,89 @@ export default function App() {
             )}
 
             <div className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
-              {/* Left column */}
+              {/* ── Left column ── */}
               <div>
                 {mode !== "hurricane" && (
                   <label className="mb-4 block">
-                    <span className="mb-2 block font-semibold text-[#07020D]">Upload Image</span>
+                    <span className="mb-1.5 block text-sm font-semibold">Upload Image</span>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={handleImageChange}
-                      className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-2 text-[#07020D]"
+                      className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-2 text-sm"
                     />
                   </label>
                 )}
 
-                <div className="mb-4 flex flex-wrap gap-3">
+                {/* Action buttons */}
+                <div className="mb-4 flex flex-wrap gap-2">
                   {!isCameraOn ? (
                     <button
                       onClick={startCamera}
-                      className="rounded-xl border-2 border-[#2E1F27] bg-[#4059AD] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                      className="flex items-center gap-2 rounded-xl border-2 border-[#2E1F27] bg-[#4059AD] px-4 py-2 font-semibold text-[#E2CFEA] transition hover:brightness-95"
                     >
-                      Open Live Camera
+                      <span className="h-2 w-2 rounded-full bg-red-400" />
+                      Open Camera
                     </button>
                   ) : (
                     <>
                       {mode !== "hurricane" && (
                         <button
                           onClick={() => void capturePhoto()}
-                          className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
+                          className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-semibold transition hover:brightness-95"
                         >
-                          Capture Snapshot
+                          📸 Capture
                         </button>
                       )}
-
                       {mode === "medical" ? (
                         timerActive ? (
                           <button
                             onClick={handleCancelMedicalTimer}
-                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-semibold text-white transition hover:brightness-95"
                           >
-                            Cancel Timer ({timerSecondsLeft}s)
+                            ⏹ Cancel ({timerSecondsLeft}s)
                           </button>
                         ) : (
                           <button
                             onClick={handleStartMedicalTimer}
-                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-semibold text-white transition hover:brightness-95"
                           >
-                            Start Timer ({getMedicalTimerSeconds(selectedScenario, mode)}s)
+                            ⏱ Start Timer ({getMedicalTimerSeconds(selectedScenario, mode)}s)
                           </button>
                         )
                       ) : (
                         <button
                           onClick={() => void sendLiveFrameForDetection()}
-                          className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                          className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-semibold text-white transition hover:brightness-95"
                         >
-                          Run Detection Now
+                          ▶ Detect Now
                         </button>
                       )}
-
                       <button
                         onClick={stopCamera}
-                        className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
+                        className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-red-400 hover:text-red-500"
                       >
-                        Stop Camera
+                        ■ Stop
                       </button>
                     </>
                   )}
                 </div>
 
+                {/* Timer bar */}
                 {mode === "medical" && (
                   <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm font-medium">Timed Medical PPE Challenge</div>
-                        <div className="text-xs text-[#2E1F27]/75">Base 30s + 5s per additional required item.</div>
+                        <div className="text-sm font-semibold">Timed Challenge</div>
+                        <div className="text-xs text-[#2E1F27]/60">30s base + 5s per extra item required</div>
                       </div>
-                      <div
-                        className={`text-2xl font-bold transition-colors ${
-                          timerActive && timerSecondsLeft <= 10 ? "text-red-600" : "text-[#2E1F27]"
-                        }`}
-                      >
-                        {timerActive ? `${timerSecondsLeft}s` : `${getMedicalTimerSeconds(selectedScenario, mode)}s`}
+                      <div className={`text-3xl font-black tabular-nums transition-colors ${timerActive && timerSecondsLeft <= 10 ? "text-red-600" : "text-[#2E1F27]"}`}>
+                        {timerActive ? `${timerSecondsLeft}` : `${getMedicalTimerSeconds(selectedScenario, mode)}`}
+                        <span className="text-base font-normal text-[#2E1F27]/50">s</span>
                       </div>
                     </div>
-                    {/* Timer progress bar */}
                     {timerActive && (
-                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#2E1F27]/10">
+                      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#2E1F27]/10">
                         <div
                           className="h-full rounded-full transition-[width] duration-1000 ease-linear"
                           style={{
@@ -690,35 +756,25 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Camera feed */}
                 {isCameraOn && (
-                  <div
-                    className={`relative mb-4 rounded-xl border-2 bg-black p-2 transition-colors ${
-                      showMedicalCountdownWarning ? "border-red-600" : "border-[#2E1F27]"
-                    }`}
-                  >
+                  <div className={`relative mb-4 overflow-hidden rounded-xl border-2 bg-black transition-colors ${showMedicalCountdownWarning ? "border-red-600 shadow-[0_0_0_3px_rgba(220,38,38,0.25)]" : "border-[#2E1F27]"}`}>
                     <div ref={videoOverlayRef} className="relative">
-                      <video ref={videoRef} autoPlay playsInline muted className="block w-full rounded-lg" />
+                      <video ref={videoRef} autoPlay playsInline muted className="block w-full" />
                       {flashActive && (
-                        <div className="pointer-events-none absolute inset-0 rounded-lg bg-white opacity-90" />
+                        <div className="pointer-events-none absolute inset-0 bg-white opacity-90" />
                       )}
-                      {/* Hurricane bounding boxes */}
                       {mode === "hurricane" && (
-                        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+                        <div className="pointer-events-none absolute inset-0 overflow-hidden">
                           {lastDetections.map((detection, index) => {
-                            const isUnsafeVest =
-                              detection.label === "safety_vest" &&
-                              unsafeVestMatches.some((m) => m.vestIndex === index);
+                            const isUnsafeVest = detection.label === "safety_vest" && unsafeVestMatches.some((m) => m.vestIndex === index);
                             return (
                               <div
                                 key={`${detection.label}-${index}`}
                                 style={getScaledBBoxStyle(detection, videoRef.current)}
-                                className={`border-2 shadow-[0_0_0_1px_rgba(0,0,0,0.35)] ${isUnsafeVest ? "border-red-600" : "border-[#F5CB5C]"}`}
+                                className={`border-2 ${isUnsafeVest ? "border-red-500" : "border-[#F5CB5C]"}`}
                               >
-                                <div
-                                  className={`absolute left-0 top-0 -translate-y-full rounded-t-md px-2 py-1 text-xs font-bold ${
-                                    isUnsafeVest ? "bg-red-600 text-white" : "bg-[#F5CB5C] text-[#2E1F27]"
-                                  }`}
-                                >
+                                <div className={`absolute left-0 top-0 -translate-y-full px-2 py-0.5 text-xs font-bold ${isUnsafeVest ? "bg-red-500 text-white" : "bg-[#F5CB5C] text-[#2E1F27]"}`}>
                                   {toDisplayLabel(detection.label)} {Math.round(detection.confidence * 100)}%
                                 </div>
                               </div>
@@ -728,32 +784,40 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* Countdown overlays */}
                     {showMedicalCountdownWarning && (
-                      <div className="pointer-events-none absolute inset-0 flex items-start justify-end p-4">
-                        <div className="rounded-lg bg-red-600 px-4 py-2 text-lg font-bold text-white shadow-lg">
+                      <div className="pointer-events-none absolute inset-0 flex items-start justify-end p-3">
+                        <div className="rounded-lg bg-red-600 px-4 py-2 text-2xl font-black text-white shadow-lg">
                           {timerSecondsLeft}s
                         </div>
                       </div>
                     )}
                     {mode === "hurricane" && unsafeVestCountdownActive && unsafeVestMatches.length > 0 && (
-                      <div className="pointer-events-none absolute inset-0 flex items-start justify-start p-4">
-                        <div className="rounded-lg bg-red-600 px-4 py-2 text-lg font-bold text-white shadow-lg">
-                          Helmet needed: {unsafeVestCountdownSecondsLeft}s
+                      <div className="pointer-events-none absolute inset-0 flex items-start justify-start p-3">
+                        <div className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg">
+                          ⚠️ Helmet needed: {unsafeVestCountdownSecondsLeft}s
                         </div>
                       </div>
                     )}
+
+                    {/* Live indicator chip */}
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                      LIVE
+                    </div>
                   </div>
                 )}
 
                 <canvas ref={canvasRef} className="hidden" />
 
                 {mode !== "hurricane" && (
-                  <div className="mb-6 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA]">
+                  <div className="mb-5 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#2E1F27]/5">
                     {previewUrl ? (
-                      <img src={previewUrl} alt="PPE preview" className="h-80 w-full object-contain" />
+                      <img src={previewUrl} alt="PPE preview" className="h-72 w-full object-contain" />
                     ) : (
-                      <div className="flex h-80 items-center justify-center text-sm text-[#2E1F27]/65">
-                        No captured or uploaded image selected
+                      <div className="flex h-72 flex-col items-center justify-center gap-2 text-[#2E1F27]/40">
+                        <span className="text-3xl">📷</span>
+                        <span className="text-sm">No image yet</span>
                       </div>
                     )}
                   </div>
@@ -761,58 +825,57 @@ export default function App() {
 
                 <div className="flex gap-3">
                   {mode === "hurricane" && !mustLeaveOverlay && (
-                    <button
-                      onClick={handleRestart}
-                      className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
-                    >
-                      Restart
+                    <button onClick={handleRestart} className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-semibold transition hover:brightness-95">
+                      ← Restart
                     </button>
                   )}
                   {mode !== "hurricane" && (
                     <button
                       onClick={() => void handleSubmit()}
                       disabled={submitting}
-                      className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
-                        submitting ? "cursor-not-allowed bg-[#2E1F27]/20" : "bg-[#F5CB5C] hover:brightness-95"
-                      }`}
+                      className={`rounded-xl border-2 border-[#2E1F27] px-5 py-2 font-semibold transition ${submitting ? "cursor-not-allowed bg-[#2E1F27]/15 text-[#2E1F27]/40" : "bg-[#F5CB5C] hover:brightness-95"}`}
                     >
-                      {submitting ? "Processing…" : "Submit Image"}
+                      {submitting ? "Analysing…" : "Submit & Grade →"}
                     </button>
                   )}
-                  <button
-                    onClick={handleBackToScenario}
-                    className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]"
-                  >
-                    Back
+                  <button onClick={handleBackToScenario} className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] px-4 py-2 font-medium transition hover:border-[#419D78]">
+                    ← Back
                   </button>
                 </div>
               </div>
 
-              {/* Right aside — FIX: show confidence bars instead of raw bbox coords */}
+              {/* ── Right aside — confidence bars ── */}
               {mode !== "hurricane" && (
-                <aside className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <h3 className="text-base font-semibold">Live Detection</h3>
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                        visionOnline ? "border-[#419D78] text-[#419D78]" : "border-[#4059AD] text-[#4059AD]"
-                      }`}
-                    >
-                      {visionOnline ? "Vision Online" : "Waiting…"}
-                    </span>
-                  </div>
-
-                  {/* Confidence bars for each PPE option */}
-                  <div className="mb-4">
+                <aside className="flex flex-col gap-4">
+                  {/* Live status header */}
+                  <div className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-wide">PPE Confidence</h3>
+                      <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${visionOnline ? "border-[#419D78] text-[#419D78]" : "border-[#2E1F27]/30 text-[#2E1F27]/40"}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${visionOnline ? "animate-pulse bg-[#419D78]" : "bg-[#2E1F27]/30"}`} />
+                        {visionOnline ? "Live" : "Offline"}
+                      </span>
+                    </div>
                     {liveConfidences.map(({ item, confidence }) => (
                       <ConfidenceBar key={item} item={item} confidence={confidence} />
                     ))}
                   </div>
 
                   {/* Scenario reminder */}
-                  <div className="mt-4 rounded-lg border border-[#2E1F27]/20 bg-[#E2CFEA] p-3">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#2E1F27]/50">Scenario</p>
-                    <p className="text-xs leading-relaxed text-[#2E1F27]/80">{selectedScenario.text}</p>
+                  <div className="rounded-xl border-2 border-[#2E1F27]/20 bg-[#E2CFEA] p-4">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#2E1F27]/40">Active Scenario</p>
+                    <p className="text-sm leading-relaxed text-[#2E1F27]/80">{selectedScenario.text}</p>
+                    {selectedScenario.category && (
+                      <span
+                        className="mt-3 inline-block rounded-lg px-2.5 py-1 text-xs font-bold"
+                        style={{
+                          backgroundColor: (CATEGORY_COLORS[selectedScenario.category] ?? CATEGORY_COLORS["Standard"]).bg,
+                          color: (CATEGORY_COLORS[selectedScenario.category] ?? CATEGORY_COLORS["Standard"]).text,
+                        }}
+                      >
+                        {selectedScenario.category}
+                      </span>
+                    )}
                   </div>
                 </aside>
               )}
@@ -820,7 +883,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Results ── FIX: use ResultScreen component */}
+        {/* ── Results ── */}
         {stage === "results" && result && (
           <ResultScreen
             result={result}
