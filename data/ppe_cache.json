@@ -71,5 +71,23 @@
       "Eye Protection"
     ],
     "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+  },
+  "A 68-year-old male is admitted to the medical ward from a long-term care facility with severe clostridium difficile infection. He has copious, frequent, watery diarrhea and is incontinent. He is weak and requires total assistance for repositioning and toileting.": {
+    "category": "Contact",
+    "required": [
+      "Gloves",
+      "Gown"
+    ],
+    "explanation": "Contact precautions required \u2014 gown and gloves prevent direct transmission via skin or contaminated surfaces."
+  },
+  "You are a triage nurse in the Emergency Department. A 45-year-old male presents with a persistent productive cough for 3 weeks, daily fever, drenching night sweats, and unintentional weight loss. He reports recently immigrating from a region known for a high prevalence of tuberculosis. He is currently unmasked and coughing occasionally in the waiting area.": {
+    "category": "Airborne",
+    "required": [
+      "Gloves",
+      "Gown",
+      "N95",
+      "Eye Protection"
+    ],
+    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
   }
 }
