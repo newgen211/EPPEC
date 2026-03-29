@@ -1,185 +1,320 @@
 .container {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 20px;
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-    Cantarell, sans-serif;
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 h1 {
   text-align: center;
   color: #333;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
 .modelSelector {
   display: flex;
   gap: 10px;
-  margin-bottom: 20px;
   justify-content: center;
+  margin-bottom: 15px;
 }
 
 .modelBtn {
-  padding: 12px 24px;
-  font-size: 16px;
+  padding: 10px 20px;
   border: 2px solid #ddd;
+  background: white;
   border-radius: 8px;
-  background-color: #f5f5f5;
   cursor: pointer;
-  transition: all 0.2s;
+  font-size: 16px;
   font-weight: 500;
+  transition: all 0.3s ease;
 }
 
 .modelBtn:hover {
-  border-color: #999;
-  background-color: #efefef;
+  border-color: #007bff;
+  color: #007bff;
 }
 
 .modelBtn.active {
-  border-color: #0066cc;
-  background-color: #0066cc;
+  background: #007bff;
   color: white;
+  border-color: #007bff;
+}
+
+.modeSelector {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.modeBtn {
+  padding: 10px 20px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.modeBtn:hover {
+  border-color: #6c757d;
+  background-color: #f8f9fa;
+}
+
+.modeBtn.active {
+  background: #6c757d;
+  color: white;
+  border-color: #6c757d;
 }
 
 .uploadSection {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  text-align: center;
   margin-bottom: 20px;
 }
 
 .uploadBtn {
-  padding: 12px 24px;
-  font-size: 16px;
-  background-color: #0066cc;
+  padding: 12px 30px;
+  background: #28a745;
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
+  font-size: 16px;
   font-weight: 500;
-  transition: background-color 0.2s;
+  transition: background 0.3s ease;
 }
 
 .uploadBtn:hover {
-  background-color: #0052a3;
+  background: #218838;
 }
 
 .uploadSection p {
+  margin-top: 10px;
   color: #666;
   font-size: 14px;
 }
 
 .preview {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-  border-radius: 8px;
-  overflow: hidden;
-  background-color: #f5f5f5;
-  max-height: 400px;
+  text-align: center;
+  margin: 25px 0;
 }
 
 .preview img {
   max-width: 100%;
   max-height: 400px;
-  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .detectBtn {
   display: block;
   margin: 20px auto;
-  padding: 14px 32px;
-  font-size: 16px;
-  background-color: #28a745;
+  padding: 12px 40px;
+  background: #007bff;
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background 0.3s ease;
 }
 
 .detectBtn:hover:not(:disabled) {
-  background-color: #218838;
+  background: #0056b3;
 }
 
 .detectBtn:disabled {
-  background-color: #cccccc;
+  background: #ccc;
   cursor: not-allowed;
 }
 
 .error {
-  background-color: #f8d7da;
-  border: 1px solid #f5c6cb;
+  background: #f8d7da;
   color: #721c24;
-  padding: 12px;
-  border-radius: 4px;
-  margin: 20px 0;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+  border: 1px solid #f5c6cb;
 }
 
 .results {
-  background-color: #f9f9f9;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  background: #f8f9fa;
   padding: 20px;
-  margin-top: 20px;
+  border-radius: 8px;
+  margin-top: 25px;
+  border: 1px solid #dee2e6;
+}
+
+.results h2 {
+  color: #333;
+  margin-top: 0;
 }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 15px;
-  margin: 15px 0;
+  margin-bottom: 20px;
   padding: 15px;
-  background-color: #fff;
+  background: white;
   border-radius: 6px;
 }
 
 .stats div {
-  font-size: 14px;
-  color: #555;
+  padding: 10px;
+  background: #e7f3ff;
+  border-left: 4px solid #007bff;
+  border-radius: 4px;
 }
 
 .stats strong {
   color: #333;
   display: block;
-  margin-bottom: 4px;
+  font-weight: 600;
 }
 
 .detectionsList {
-  margin-top: 15px;
+  margin-top: 20px;
 }
 
 .detectionsList h3 {
-  margin: 15px 0 10px 0;
   color: #333;
+  margin-bottom: 12px;
 }
 
 .detectionItem {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
-  background-color: #fff;
-  border-left: 4px solid #0066cc;
+  padding: 10px 12px;
+  background: white;
   margin-bottom: 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  border-left: 4px solid #28a745;
 }
 
 .class {
-  font-weight: 600;
+  font-weight: 500;
   color: #333;
-  flex: 1;
 }
 
 .confidence {
-  background-color: #0066cc;
+  background: #d4edda;
+  color: #155724;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* WEBCAM MODE STYLES */
+
+.webcamControls {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.webcamBtn {
+  padding: 14px 40px;
+  background: #dc3545;
   color: white;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: bold;
-  white-space: nowrap;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.webcamBtn:hover:not(.active) {
+  background: #c82333;
+}
+
+.webcamBtn.active {
+  background: #28a745;
+}
+
+.webcamBtn.active:hover {
+  background: #218838;
+}
+
+.webcamContainer {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  margin: 20px auto;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: transparent; /* FIX */
+}
+
+.video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover; /* CHANGE THIS */
+  background: transparent; /* FIX */
+  z-index: 1;
+}
+
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 2;
+  background: transparent; /* ADD THIS */
+}
+
+.compliancePanel {
+  margin: 20px 0;
+  padding: 20px;
+  border-radius: 8px;
+  border: 3px solid;
+}
+
+.compliancePanel h3 {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+}
+
+.compliant {
+  background: #d4edda;
+  border-color: #28a745;
+  color: #155724;
+}
+
+.notCompliant {
+  background: #f8d7da;
+  border-color: #dc3545;
+  color: #721c24;
+}
+
+.complianceDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.complianceDetails div {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+}
+
+.complianceDetails strong {
+  font-weight: 600;
+  display: inline;
 }
