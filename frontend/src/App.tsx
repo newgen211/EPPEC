@@ -269,6 +269,8 @@ export default function App() {
   const [unsafeVestCountdownActive, setUnsafeVestCountdownActive] = useState(false);
   const [unsafeVestCountdownSecondsLeft, setUnsafeVestCountdownSecondsLeft] = useState(5);
 
+  const [flashActive, setFlashActive] = useState(false);
+
   const showMedicalCountdownWarning =
     mode === "medical" &&
     isCameraOn &&
@@ -489,24 +491,29 @@ useEffect(() => {
   setUnsafeVestCountdownSecondsLeft(5);
   };
 
-  const handleSelectMode = (selectedMode: AppMode) => {
-    resetForNewRun();
-    setMode(selectedMode);
+const handleSelectMode = (selectedMode: AppMode) => {
+  resetForNewRun();
+  setMode(selectedMode);
 
-    if (selectedMode === "hurricane") {
-      setSelectedScenario(HURRICANE_SCENARIO);
-      setSelectedMedicalScenarioId(null);
-    } else {
-      const firstScenario = medicalScenarios[0] ?? aiScenario ?? null;
-      setSelectedScenario(firstScenario);
-      setSelectedMedicalScenarioId(firstScenario?.id ?? null);
-    }
-    
-    setTimerActive(false);
-    setTimerSecondsLeft(0);
+  if (selectedMode === "hurricane") {
+    setSelectedScenario(HURRICANE_SCENARIO);
+    setSelectedMedicalScenarioId(null);
 
-    setStage("scenario");
-  };
+    // ✅ GO STRAIGHT TO CAMERA
+    setStage("camera");
+    return;
+  }
+
+  const firstScenario = medicalScenarios[0] ?? aiScenario ?? null;
+  setSelectedScenario(firstScenario);
+  setSelectedMedicalScenarioId(firstScenario?.id ?? null);
+
+  setTimerActive(false);
+  setTimerSecondsLeft(0);
+
+  // medical still uses scenario page
+  setStage("scenario");
+};
 
   const handleMedicalScenarioChange = (
     event: React.ChangeEvent<HTMLSelectElement>
@@ -600,7 +607,17 @@ useEffect(() => {
   return new File([blob], "timer-capture.jpg", { type: "image/jpeg" });
 };
 
-  const capturePhoto = async () => {
+const triggerCameraFlash = () => {
+  setFlashActive(true);
+
+  window.setTimeout(() => {
+    setFlashActive(false);
+  }, 120);
+};
+
+const capturePhoto = async () => {
+  triggerCameraFlash();
+
   const file = await capturePhotoFile();
   if (!file) return;
   setUploadedImage(file);
@@ -991,6 +1008,10 @@ const handleCancelMedicalTimer = () => {
                         muted
                         className="block w-full rounded-lg"
                       />
+
+                      {flashActive && (
+    <div className="pointer-events-none absolute inset-0 rounded-lg bg-white opacity-90" />
+  )}
 
                       {mode === "hurricane" && (
                         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
