@@ -10,84 +10,49 @@
     "category": "Droplet",
     "required": [
       "Gloves",
-      "Gown",
-      "Surgical Mask",
+      "Coverall",
+      "Mask",
       "Eye Protection"
     ],
-    "explanation": "Droplet precautions required \u2014 this pathogen spreads via respiratory droplets within 3 feet. Mask and eye protection prevent mucosal exposure."
+    "explanation": "Droplet precautions required \u2014 this pathogen spreads via respiratory droplets within 3 feet. A surgical mask and eye protection prevent mucosal exposure."
   },
   "Entering an isolation room for a patient with C. diff infection.": {
     "category": "Contact",
     "required": [
       "Gloves",
-      "Gown"
+      "Coverall"
     ],
-    "explanation": "Contact precautions required \u2014 gown and gloves prevent direct transmission via skin or contaminated surfaces."
+    "explanation": "Contact precautions required \u2014 coverall and gloves prevent direct transmission via skin or contaminated surfaces."
   },
   "Suspected tuberculosis \u2014 patient has persistent cough and night sweats.": {
     "category": "Airborne",
     "required": [
       "Gloves",
-      "Gown",
-      "N95",
+      "Coverall",
+      "Mask",
       "Eye Protection"
     ],
-    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+    "explanation": "Airborne precautions required \u2014 an N95 or higher-grade mask is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
   },
   "Emergency intubation on an unknown-status patient with high aerosolization risk.": {
     "category": "High-Risk",
     "required": [
       "Gloves",
-      "Gown",
-      "N95",
+      "Coverall",
+      "Mask",
       "Face Shield",
       "Eye Protection"
     ],
     "explanation": "Highest level of protection required \u2014 full PPE including face shield prevents splash and aerosol exposure in an emergency high-risk setting."
   },
-  "string": {
-    "category": "Standard",
-    "required": [
-      "Gloves"
-    ],
-    "explanation": "Standard precautions apply \u2014 gloves protect against bloodborne pathogen exposure during routine procedures."
-  },
-  "Suspected tuberculosis \u2014 patient has persistent cough.": {
+  "A patient in the ICU with acute respiratory distress syndrome is undergoing an open tracheal suctioning procedure due to copious, thick secretions and declining oxygen saturation.": {
     "category": "Airborne",
     "required": [
       "Gloves",
-      "Gown",
-      "N95",
+      "Coverall",
+      "Mask",
       "Eye Protection"
     ],
-    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
-  },
-  "A 45-year-old male presents to the emergency department with a productive cough, night sweats, and significant weight loss over the past two months. He reports having recently immigrated from a country with a high incidence of tuberculosis. His chest X-ray shows apical cavitary lesions. He is alert and oriented but appears fatigued and has a persistent cough. You are preparing to enter the room to perform a physical assessment.": {
-    "category": "Airborne",
-    "required": [
-      "Gloves",
-      "Gown",
-      "N95",
-      "Eye Protection"
-    ],
-    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
-  },
-  "A 68-year-old male is admitted to the medical ward from a long-term care facility with severe clostridium difficile infection. He has copious, frequent, watery diarrhea and is incontinent. He is weak and requires total assistance for repositioning and toileting.": {
-    "category": "Contact",
-    "required": [
-      "Gloves",
-      "Gown"
-    ],
-    "explanation": "Contact precautions required \u2014 gown and gloves prevent direct transmission via skin or contaminated surfaces."
-  },
-  "You are a triage nurse in the Emergency Department. A 45-year-old male presents with a persistent productive cough for 3 weeks, daily fever, drenching night sweats, and unintentional weight loss. He reports recently immigrating from a region known for a high prevalence of tuberculosis. He is currently unmasked and coughing occasionally in the waiting area.": {
-    "category": "Airborne",
-    "required": [
-      "Gloves",
-      "Gown",
-      "N95",
-      "Eye Protection"
-    ],
-    "explanation": "Airborne precautions required \u2014 N95 is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
+    "explanation": "Airborne precautions required \u2014 an N95 or higher-grade mask is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
   }
 }
