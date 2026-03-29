@@ -467,10 +467,10 @@ export default function App() {
   ] as (BackendScenario & { _isAi?: boolean })[];
 
   return (
-    <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]">
+    <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]" style={{ backgroundImage: "radial-gradient(circle, #2E1F2718 1px, transparent 1px)", backgroundSize: "24px 24px" }}>
 
       {/* ── Header ───────────────────────────────────────────── */}
-      <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-4">
+      <header className="border-b-4 border-[#F5CB5C] bg-[#4059AD] px-6 py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#E2CFEA]/40 bg-[#E2CFEA]/10 text-xl">
@@ -520,6 +520,11 @@ export default function App() {
             <div className="mb-8 text-center">
               <h2 className="mb-2 text-3xl font-bold">Choose a Mode</h2>
               <p className="text-[#2E1F27]/60">Select the PPE workflow to run the live check against.</p>
+              <div className="mx-auto mt-4 flex items-center justify-center gap-1.5">
+                <span className="h-1.5 w-6 rounded-full bg-[#4059AD]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#419D78]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#F5CB5C]" />
+              </div>
             </div>
 
             {(loadingScenarios || loadingAiScenario) && (
@@ -536,7 +541,7 @@ export default function App() {
               {/* Hurricane card */}
               <button
                 onClick={() => handleSelectMode("hurricane")}
-                className="group flex flex-col rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 text-left transition hover:border-[#419D78] hover:shadow-lg"
+                className="group flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27] border-t-[#F5CB5C] bg-[#E2CFEA] p-6 text-left transition hover:shadow-lg hover:shadow-[#F5CB5C]/20"
               >
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#4059AD] text-3xl transition group-hover:scale-105">
                   🌊
@@ -559,7 +564,7 @@ export default function App() {
                   }
                 }}
                 disabled={loadingScenarios || loadingAiScenario}
-                className="group flex flex-col rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 text-left transition hover:border-[#419D78] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                className="group flex flex-col rounded-2xl border-2 border-t-4 border-[#2E1F27] border-t-[#419D78] bg-[#E2CFEA] p-6 text-left transition hover:shadow-lg hover:shadow-[#419D78]/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2E1F27] bg-[#419D78] text-3xl transition group-hover:scale-105">
                   🏥
@@ -581,7 +586,10 @@ export default function App() {
         {stage === "scenario" && selectedScenario && (
           <div>
             <div className="mb-6">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#4059AD]">Medical PPE</div>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#4059AD]" />
+                <div className="text-xs font-semibold uppercase tracking-widest text-[#4059AD]">Medical PPE</div>
+              </div>
               <h2 className="text-3xl font-bold">Pick a Scenario</h2>
             </div>
 
@@ -604,11 +612,11 @@ export default function App() {
                       setSelectedScenario(scenario);
                       setSelectedMedicalScenarioId(scenario.id);
                     }}
-                    className={`flex w-full items-start gap-4 rounded-xl border-2 p-4 text-left transition hover:shadow-md ${
-                      isSelected
-                        ? "border-[#4059AD] bg-[#4059AD]/10 shadow-sm"
-                        : "border-[#2E1F27]/20 bg-[#E2CFEA] hover:border-[#4059AD]/50"
-                    }`}
+                    className="flex w-full items-start gap-4 rounded-xl border-2 p-4 text-left transition hover:shadow-md"
+                    style={isSelected
+                      ? { borderColor: colors.bg, backgroundColor: colors.bg + "18" }
+                      : { borderColor: "#2E1F2730", backgroundColor: "#E2CFEA" }
+                    }
                   >
                     {/* Category badge */}
                     <span
@@ -619,7 +627,7 @@ export default function App() {
                     </span>
                     <span className="flex-1 text-sm leading-relaxed">{scenario.text}</span>
                     {isSelected && (
-                      <span className="mt-0.5 flex-shrink-0 text-[#4059AD]">✓</span>
+                      <span className="mt-0.5 flex-shrink-0 font-bold" style={{ color: colors.bg }}>✓</span>
                     )}
                   </button>
                 );
@@ -645,7 +653,7 @@ export default function App() {
 
         {/* ── Camera Stage ─────────────────────────────────────── */}
         {stage === "camera" && selectedScenario && (
-          <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
+          <div className="rounded-2xl border-2 border-l-4 border-[#2E1F27] border-l-[#4059AD] bg-[#E2CFEA] p-6 shadow-sm">
             <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-[#4059AD]">
               {mode === "hurricane" ? "Hurricane Response" : "Medical PPE"}
             </div>
