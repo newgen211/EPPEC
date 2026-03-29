@@ -1,2 +1,45 @@
 @import "tailwindcss";
 
+/* ── Fonts ───────────────────────────────────────────────── */
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, .font-syne {
+  font-family: 'Syne', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* ── Stage fade-up animation ─────────────────────────────── */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.3s ease-out forwards;
+}
+
+/* ── Card elevation ──────────────────────────────────────── */
+/* Semi-transparent white lifts cards off the lavender page bg */
+.eppec-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* ── Header noise texture ────────────────────────────────── */
+/* A very faint SVG noise overlay baked into the gradient */
+.eppec-header {
+  background-color: #4059AD;
+  background-image:
+    linear-gradient(135deg, #4059AD 0%, #3044A0 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  background-blend-mode: normal, overlay;
+}
