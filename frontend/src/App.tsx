@@ -11,6 +11,9 @@ import {
 } from "./api";
 import ConfidenceBar from "./components/ConfidenceBar";
 import ResultScreen from "./screens/ResultScreen";
+import { AUDIO } from "./audio/keys";
+import { useSound } from "./audio/useSound";
+import { useAiScenarioAudio } from "./audio/useAiScenarioAudio";
 
 type AppStage = "modeSelect" | "scenario" | "camera" | "results";
 type AppMode = "hurricane" | "medical" | null;
@@ -169,6 +172,12 @@ export default function App() {
   const [flashActive, setFlashActive] = useState(false);
   const [mustLeaveOverlay, setMustLeaveOverlay] = useState(false);
 
+  // ── Audio ─────────────────────────────────────────────
+  const { play, playBlob, stop } = useSound();
+  const { blobUrl: aiScenarioBlobUrl } = useAiScenarioAudio(
+    aiScenario?.text ?? null
+  );
+
   const showMedicalCountdownWarning = mode === "medical" && isCameraOn && timerActive && timerSecondsLeft <= 10;
 
   const ppeOptions = useMemo(() => (mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS), [mode]);
@@ -237,6 +246,7 @@ export default function App() {
     if (timerSecondsLeft <= 0) {
       void (async () => {
         setTimerActive(false);
+        play(AUDIO.TIMER_END);
         const file = await capturePhotoFile();
         if (!file) { setErrorMessage("Could not capture image when timer ended."); return; }
         await handleSubmit(file);
@@ -244,19 +254,33 @@ export default function App() {
       return;
     }
     const timeout = setTimeout(() => setTimerSecondsLeft((p) => p - 1), 1000);
+    // Play warning once when hitting 10s
+    if (timerSecondsLeft === 10) play(AUDIO.TIMER_WARNING);
     return () => clearTimeout(timeout);
   }, [timerActive, timerSecondsLeft]);
 
   useEffect(() => {
     if (mode !== "hurricane") { setUnsafeVestCountdownActive(false); setUnsafeVestCountdownSecondsLeft(5); return; }
+    if (mustLeaveOverlay) return; // already failed — don't restart the warning
     const hasUnsafeVest = unsafeVestMatches.length > 0;
     if (!isCameraOn || !hasUnsafeVest) { setUnsafeVestCountdownActive(false); setUnsafeVestCountdownSecondsLeft(5); return; }
-    setUnsafeVestCountdownActive((prev) => { if (!prev) setUnsafeVestCountdownSecondsLeft(5); return true; });
-  }, [mode, isCameraOn, unsafeVestMatches]);
+    setUnsafeVestCountdownActive((prev) => {
+      if (!prev) {
+        setUnsafeVestCountdownSecondsLeft(5);
+        play(AUDIO.WARNING_HELMET_NEEDED);
+      }
+      return true;
+    });
+  }, [mode, isCameraOn, unsafeVestMatches, mustLeaveOverlay]);
 
   useEffect(() => {
     if (!unsafeVestCountdownActive || unsafeVestMatches.length === 0) return;
-    if (unsafeVestCountdownSecondsLeft <= 0) { setUnsafeVestCountdownActive(false); setMustLeaveOverlay(true); return; }
+    if (unsafeVestCountdownSecondsLeft <= 0) {
+      setUnsafeVestCountdownActive(false);
+      setMustLeaveOverlay(true);
+      play(AUDIO.WARNING_MUST_LEAVE);
+      return;
+    }
     const timeout = setTimeout(() => setUnsafeVestCountdownSecondsLeft((p) => p - 1), 1000);
     return () => clearTimeout(timeout);
   }, [unsafeVestCountdownActive, unsafeVestCountdownSecondsLeft, unsafeVestMatches]);
@@ -390,6 +414,7 @@ export default function App() {
     setErrorMessage(null);
     setTimerSecondsLeft(getMedicalTimerSeconds(selectedScenario, mode));
     setTimerActive(true);
+    play(AUDIO.TIMER_START);
   };
 
   const handleCancelMedicalTimer = () => { setTimerActive(false); setTimerSecondsLeft(0); };
@@ -442,6 +467,16 @@ export default function App() {
       setLastDetections(data.detections);
       setVisionOnline(true);
       setStage("results");
+
+      // Play outcome audio
+      const outcomeAudioMap: Record<string, typeof AUDIO[keyof typeof AUDIO]> = {
+        correct:        AUDIO.OUTCOME_CORRECT,
+        incomplete:     AUDIO.OUTCOME_INCOMPLETE,
+        "over-protected": AUDIO.OUTCOME_OVER_PROTECTED,
+        incorrect:      AUDIO.OUTCOME_INCORRECT,
+      };
+      const outcomeKey = outcomeAudioMap[data.outcome];
+      if (outcomeKey) play(outcomeKey);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to submit image to the backend.");
     } finally {
@@ -636,7 +671,28 @@ export default function App() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => setStage("camera")}
+                onClick={() => {
+                  setStage("camera");
+                  if (selectedMedicalScenarioId === AI_SCENARIO_OPTION_ID && aiScenarioBlobUrl) {
+                    playBlob(aiScenarioBlobUrl);
+                  } else if (mode === "hurricane") {
+                    play(AUDIO.SCENARIO_BRIEFING_HURRICANE);
+                  } else {
+                    // Map scenario ID to its pre-recorded briefing key
+                    const briefingMap: Record<number, typeof AUDIO[keyof typeof AUDIO]> = {
+                      1: AUDIO.SCENARIO_BRIEFING_1,
+                      2: AUDIO.SCENARIO_BRIEFING_2,
+                      3: AUDIO.SCENARIO_BRIEFING_3,
+                      4: AUDIO.SCENARIO_BRIEFING_4,
+                      5: AUDIO.SCENARIO_BRIEFING_5,
+                    };
+                    const key = selectedMedicalScenarioId !== null
+                      ? briefingMap[selectedMedicalScenarioId]
+                      : undefined;
+                    if (key) play(key);
+                    else play(AUDIO.SCENARIO_SELECTED);
+                  }
+                }}
                 className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-5 py-2.5 font-semibold transition hover:brightness-95"
               >
                 Start PPE Challenge →

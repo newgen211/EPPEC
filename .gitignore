@@ -16,3 +16,4 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 context_dump/
+.env*
