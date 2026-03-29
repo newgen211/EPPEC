@@ -747,17 +747,19 @@ const handleCancelMedicalTimer = () => {
 
             <div className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
               <div>
-                <label className="mb-4 block">
-                  <span className="mb-2 block text-sm font-medium">
-                    Upload Image
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-3 text-sm file:mr-4 file:rounded-lg file:border-2 file:border-[#2E1F27] file:bg-[#F5CB5C] file:px-4 file:py-2 file:text-sm file:font-medium hover:file:brightness-95"
-                  />
-                </label>
+                {mode !== "hurricane" && (
+                  <label className="mb-4 block">
+                    <span className="mb-2 block font-semibold text-[#07020D]">
+                      Upload Image
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="block w-full rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-2 text-[#07020D]"
+                    />
+                  </label>
+)}
 
                 <div className="mb-4 flex flex-wrap gap-3">
                   {!isCameraOn ? (
@@ -769,12 +771,14 @@ const handleCancelMedicalTimer = () => {
                     </button>
                   ) : (
                     <>
-                      <button
-                        onClick={() => void capturePhoto()}
-                        className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
-                      >
-                        Capture Snapshot
-                      </button>
+                      {mode !== "hurricane" && (
+                        <button
+                          onClick={() => void capturePhoto()}
+                          className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
+                        >
+                          Capture Snapshot
+                        </button>
+                      )}
 
                       {mode === "medical" ? (
                         timerActive ? (
@@ -857,34 +861,38 @@ const handleCancelMedicalTimer = () => {
 
                 <canvas ref={canvasRef} className="hidden" />
 
-                <div className="mb-6 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA]">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt="PPE preview"
-                      className="h-80 w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-80 items-center justify-center text-[#2E1F27]/65">
-                      No captured or uploaded image selected
-                    </div>
-                  )}
-                </div>
+                {mode !== "hurricane" && (
+                  <div className="mb-6 overflow-hidden rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA]">
+                    {previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt="PPE preview"
+                        className="h-80 w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-80 items-center justify-center text-[#2E1F27]/65">
+                        No captured or uploaded image selected
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 
 
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => void handleSubmit()}
-                    disabled={submitting}
-                    className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
-                      submitting
-                        ? "cursor-not-allowed bg-[#2E1F27]/20"
-                        : "bg-[#F5CB5C] hover:brightness-95"
-                    }`}
-                  >
-                    {submitting ? "Processing..." : "Submit Image"}
-                  </button>
+                   {mode !== "hurricane" && (
+                      <button
+                        onClick={() => void handleSubmit()}
+                        disabled={submitting}
+                        className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
+                          submitting
+                            ? "cursor-not-allowed bg-[#2E1F27]/20"
+                            : "bg-[#F5CB5C] hover:brightness-95"
+                        }`}
+                      >
+                        {submitting ? "Processing..." : "Submit Image"}
+                      </button>
+                    )}
 
                   <button
                     onClick={handleBackToScenario}
@@ -895,56 +903,56 @@ const handleCancelMedicalTimer = () => {
                 </div>
               </div>
 
-              <aside className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
-  <div className="mb-4 flex items-center justify-between gap-3">
-    <h3 className="text-lg font-semibold">Latest Model Detections</h3>
-    <span
-      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-        visionOnline
-          ? "border-[#419D78] text-[#419D78]"
-          : "border-[#4059AD] text-[#4059AD]"
-      }`}
-    >
-      {visionOnline ? "Vision Online" : "Waiting for Detection"}
-    </span>
-  </div>
+              {mode !== "hurricane" && (
+                <aside className="rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold">Latest Model Detections</h3>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                        visionOnline
+                          ? "border-[#419D78] text-[#419D78]"
+                          : "border-[#4059AD] text-[#4059AD]"
+                      }`}
+                    >
+                      {visionOnline ? "Vision Online" : "Waiting for Detection"}
+                    </span>
+                  </div>
 
-  {lastDetections.length > 0 ? (
-    <div className="space-y-3">
-      {lastDetections.map((detection, index) => (
-        <div
-          key={`${detection.label}-${index}`}
-          className="rounded-lg border-2 border-[#2E1F27] px-3 py-3"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium">
-              {toDisplayLabel(detection.label)}
-            </span>
-            <span className="text-sm font-semibold">
-              {Math.round(detection.confidence * 100)}%
-            </span>
-          </div>
+                  {lastDetections.length > 0 ? (
+                    <div className="space-y-3">
+                      {lastDetections.map((detection, index) => (
+                        <div
+                          key={`${detection.label}-${index}`}
+                          className="rounded-lg border-2 border-[#2E1F27] px-3 py-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-medium">
+                              {toDisplayLabel(detection.label)}
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {Math.round(detection.confidence * 100)}%
+                            </span>
+                          </div>
 
-          {detection.raw_class && detection.raw_class !== detection.label && (
-            <div className="mt-1 text-xs text-[#2E1F27]/70">
-              Raw class: {detection.raw_class}
-            </div>
-          )}
+                          {detection.raw_class && detection.raw_class !== detection.label && (
+                            <div className="mt-1 text-xs text-[#2E1F27]/70">
+                              Raw class: {detection.raw_class}
+                            </div>
+                          )}
 
-          <div className="mt-2 text-xs text-[#2E1F27]/70">
-            Box: x1 {detection.bbox.x1}, y1 {detection.bbox.y1}, x2 {detection.bbox.x2}, y2 {detection.bbox.y2}
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div className="rounded-lg border-2 border-dashed border-[#2E1F27] px-4 py-6 text-sm text-[#2E1F27]/70">
-      No detections yet. Run live detection or submit an image.
-    </div>
-  )}
-
-  
-</aside>
+                          <div className="mt-2 text-xs text-[#2E1F27]/70">
+                            Box: x1 {detection.bbox.x1}, y1 {detection.bbox.y1}, x2 {detection.bbox.x2}, y2 {detection.bbox.y2}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border-2 border-dashed border-[#2E1F27] px-4 py-6 text-sm text-[#2E1F27]/70">
+                      No detections yet. Run live detection or submit an image.
+                    </div>
+                  )}
+                </aside>
+              )}
             </div>
           </div>
         )}
