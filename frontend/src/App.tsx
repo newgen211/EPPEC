@@ -89,6 +89,40 @@ function toDisplayLabel(label: string): string {
   return LABEL_TO_DISPLAY[label] ?? label;
 }
 
+function getRequiredCountForTimer(
+  selectedScenario: BackendScenario | null,
+  mode: AppMode
+): number {
+  if (!selectedScenario || mode !== "medical") return 1;
+
+  if (selectedScenario.required?.length) {
+    return selectedScenario.required.length;
+  }
+
+  switch (selectedScenario.category) {
+    case "Standard":
+      return 1;
+    case "Contact":
+      return 2;
+    case "Droplet":
+      return 4;
+    case "Airborne":
+      return 4;
+    case "High-Risk":
+      return 5;
+    default:
+      return 1;
+  }
+}
+
+function getMedicalTimerSeconds(
+  selectedScenario: BackendScenario | null,
+  mode: AppMode
+): number {
+  const requiredCount = getRequiredCountForTimer(selectedScenario, mode);
+  return 30 + Math.max(0, requiredCount - 1) * 5;
+}
+
 function normalizeDetectionsToConfidence(
   detections: Detection[],
   options: string[]
@@ -141,6 +175,8 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
+  const [timerActive, setTimerActive] = useState(false);
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
   const ppeOptions = useMemo(() => {
     return mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
@@ -246,6 +282,33 @@ export default function App() {
     return () => clearInterval(interval);
   }, [stage, isCameraOn, mode, ppeOptions]);
 
+  useEffect(() => {
+  if (!timerActive) return;
+
+  if (timerSecondsLeft <= 0) {
+    const autoCaptureAndSubmit = async () => {
+      setTimerActive(false);
+
+      const file = await capturePhotoFile();
+      if (!file) {
+        setErrorMessage("Could not capture image when timer ended.");
+        return;
+      }
+
+      await handleSubmit(file);
+    };
+
+    void autoCaptureAndSubmit();
+    return;
+  }
+
+  const timeout = setTimeout(() => {
+    setTimerSecondsLeft((prev) => prev - 1);
+  }, 1000);
+
+  return () => clearTimeout(timeout);
+}, [timerActive, timerSecondsLeft]);
+
   const stopCamera = () => {
     cameraStream?.getTracks().forEach((track) => track.stop());
     setCameraStream(null);
@@ -256,6 +319,8 @@ export default function App() {
 
     setIsCameraOn(false);
     setVisionBusy(false);
+    setTimerActive(false);
+    setTimerSecondsLeft(0);
   };
 
   const resetForNewRun = () => {
@@ -271,6 +336,8 @@ export default function App() {
         confidence: 0,
       }))
     );
+    setTimerActive(false);
+    setTimerSecondsLeft(0);
   };
 
   const handleSelectMode = (selectedMode: AppMode) => {
@@ -285,6 +352,9 @@ export default function App() {
       setSelectedScenario(firstScenario);
       setSelectedMedicalScenarioId(firstScenario?.id ?? null);
     }
+    
+    setTimerActive(false);
+    setTimerSecondsLeft(0);
 
     setStage("scenario");
   };
@@ -357,31 +427,58 @@ export default function App() {
     }
   };
 
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+  const capturePhotoFile = async (): Promise<File | null> => {
+  if (!videoRef.current || !canvasRef.current) return null;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
+  const context = canvas.getContext("2d");
 
-    if (!context) return;
-    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+  if (!context) return null;
+  if (video.videoWidth === 0 || video.videoHeight === 0) return null;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-        setUploadedImage(file);
-      },
-      "image/jpeg",
-      0.95
-    );
-  };
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((value) => resolve(value), "image/jpeg", 0.95);
+  });
+
+  if (!blob) return null;
+
+  return new File([blob], "timer-capture.jpg", { type: "image/jpeg" });
+};
+
+  const capturePhoto = async () => {
+  const file = await capturePhotoFile();
+  if (!file) return;
+  setUploadedImage(file);
+};
+
+const handleStartMedicalTimer = () => {
+  if (mode !== "medical") return;
+
+  if (!isCameraOn) {
+    setErrorMessage("Please open the live camera before starting the timer.");
+    return;
+  }
+
+  if (!selectedScenario) {
+    setErrorMessage("No scenario selected.");
+    return;
+  }
+
+  setErrorMessage(null);
+  setTimerSecondsLeft(getMedicalTimerSeconds(selectedScenario, mode));
+  setTimerActive(true);
+};
+
+const handleCancelMedicalTimer = () => {
+  setTimerActive(false);
+  setTimerSecondsLeft(0);
+};
 
   const sendLiveFrameForDetection = async () => {
     if (visionBusy) return;
@@ -426,64 +523,65 @@ export default function App() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!selectedScenario) return;
+  const handleSubmit = async (overrideFile?: File) => {
+  if (!selectedScenario) return;
 
-    if (!uploadedImage) {
-      setErrorMessage("Please upload or capture an image before submitting.");
-      return;
-    }
+  const fileToSubmit = overrideFile ?? uploadedImage;
 
-    if (mode === "hurricane") {
-      setErrorMessage(
-        "The new detect-and-grade backend route is currently medical-mode only. Live construction detection is wired, but final grading still needs a construction grading route."
-      );
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setErrorMessage(null);
-
-      const formData = new FormData();
-formData.append("file", uploadedImage);
-
-const response = await fetch(
-  `http://localhost:8000/detect-and-grade?scenario_text=${encodeURIComponent(
-    selectedScenario.text
-  )}&model_type=medical`,
-  {
-    method: "POST",
-    body: formData,
+  if (!fileToSubmit) {
+    setErrorMessage("Please upload or capture an image before submitting.");
+    return;
   }
-);
 
-if (!response.ok) {
-  const text = await response.text();
-  throw new Error(`Error ${response.status}: ${text}`);
-}
+  if (mode === "hurricane") {
+    setErrorMessage(
+      "The new detect-and-grade backend route is currently medical-mode only. Live construction detection is wired, but final grading still needs a construction grading route."
+    );
+    return;
+  }
 
-const data = await response.json();
+  try {
+    setSubmitting(true);
+    setErrorMessage(null);
 
-      setResult(data);
-      setLastDetections(data.detections);
-      setLiveConfidences(
-        normalizeDetectionsToConfidence(data.detections, ppeOptions)
-      );
-      setStage("results");
-    } catch (error) {
-      console.error(error);
+    const formData = new FormData();
+    formData.append("file", fileToSubmit);
 
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to submit image to the backend.";
+    const response = await fetch(
+      `http://localhost:8000/detect-and-grade?scenario_text=${encodeURIComponent(
+        selectedScenario.text
+      )}&model_type=medical`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
 
-      setErrorMessage(message);
-    } finally {
-      setSubmitting(false);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Error ${response.status}: ${text}`);
     }
-  };
+
+    const data = await response.json();
+
+    setUploadedImage(fileToSubmit);
+    setResult(data);
+    setLastDetections(data.detections);
+    setVisionOnline(true);
+    setStage("results");
+  } catch (error) {
+    console.error(error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to submit image to the backend.";
+
+    setErrorMessage(message);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#E2CFEA] text-[#2E1F27]">
@@ -666,18 +764,36 @@ const data = await response.json();
                   ) : (
                     <>
                       <button
-                        onClick={capturePhoto}
+                        onClick={() => void capturePhoto()}
                         className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
                       >
                         Capture Snapshot
                       </button>
 
-                      <button
-                        onClick={() => void sendLiveFrameForDetection()}
-                        className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
-                      >
-                        Run Detection Now
-                      </button>
+                      {mode === "medical" ? (
+                        timerActive ? (
+                          <button
+                            onClick={handleCancelMedicalTimer}
+                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                          >
+                            Cancel Timer ({timerSecondsLeft}s)
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleStartMedicalTimer}
+                            className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                          >
+                            Start Timer ({getMedicalTimerSeconds(selectedScenario, mode)}s)
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => void sendLiveFrameForDetection()}
+                          className="rounded-xl border-2 border-[#2E1F27] bg-[#419D78] px-4 py-2 font-medium text-[#E2CFEA] transition hover:brightness-95"
+                        >
+                          Run Detection Now
+                        </button>
+                      )}
 
                       <button
                         onClick={stopCamera}
@@ -688,6 +804,24 @@ const data = await response.json();
                     </>
                   )}
                 </div>
+                
+                {mode === "medical" && (
+                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">Timed Medical PPE Challenge</div>
+                        <div className="text-sm text-[#2E1F27]/75">
+                          Base 30 seconds, plus 5 seconds for each additional required item.
+                        </div>
+                      </div>
+                      <div className="text-2xl font-bold">
+                        {timerActive
+                          ? `${timerSecondsLeft}s`
+                          : `${getMedicalTimerSeconds(selectedScenario, mode)}s`}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {isCameraOn && (
                   <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-black p-2">
@@ -721,7 +855,7 @@ const data = await response.json();
 
                 <div className="flex gap-3">
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => void handleSubmit()}
                     disabled={submitting}
                     className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
                       submitting
