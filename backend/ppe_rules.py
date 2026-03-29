@@ -54,11 +54,12 @@ CATEGORIES = list(PPE_RULES.keys())
 # detector.py already lowercases and underscores, so we map from there
 
 LABEL_MAP: dict[str, str] = {
-    "mask":        "Mask",
-    "gloves":      "Gloves",
-    "coverall":    "Coverall",
-    "face_shield": "Face Shield",
-    "goggles":     "Eye Protection",
+    "mask":           "Mask",
+    "gloves":         "Gloves",
+    "coverall":       "Coverall",
+    "face_shield":    "Face Shield",
+    "goggles":        "Eye Protection",
+    "eye_protection": "Eye Protection",   # detector normalises Goggles → eye_protection
 }
 
 def normalize_label(label: str) -> str:
