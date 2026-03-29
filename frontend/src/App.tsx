@@ -146,6 +146,93 @@ function normalizeDetectionsToConfidence(
   }));
 }
 
+type UnsafeVestMatch = {
+  vestIndex: number;
+  vest: Detection;
+};
+
+function getBoxCenterX(detection: Detection): number {
+  return (detection.bbox.x1 + detection.bbox.x2) / 2;
+}
+
+function getBoxCenterY(detection: Detection): number {
+  return (detection.bbox.y1 + detection.bbox.y2) / 2;
+}
+
+function getHorizontalOverlap(a: Detection, b: Detection): number {
+  const left = Math.max(a.bbox.x1, b.bbox.x1);
+  const right = Math.min(a.bbox.x2, b.bbox.x2);
+  return Math.max(0, right - left);
+}
+
+function hasHelmetAboveVest(vest: Detection, helmets: Detection[]): boolean {
+  const vestCenterY = getBoxCenterY(vest);
+  const vestWidth = vest.bbox.x2 - vest.bbox.x1;
+
+  return helmets.some((helmet) => {
+    const helmetCenterY = getBoxCenterY(helmet);
+    const helmetCenterX = getBoxCenterX(helmet);
+    const vestLeft = vest.bbox.x1;
+    const vestRight = vest.bbox.x2;
+    const overlap = getHorizontalOverlap(vest, helmet);
+
+    const horizontallyAligned =
+      (helmetCenterX >= vestLeft && helmetCenterX <= vestRight) ||
+      overlap >= vestWidth * 0.2;
+
+    const aboveVest = helmetCenterY < vestCenterY;
+
+    return horizontallyAligned && aboveVest;
+  });
+}
+
+function getUnsafeVestMatches(detections: Detection[]): UnsafeVestMatch[] {
+  const vests = detections
+    .map((detection, index) => ({ detection, index }))
+    .filter(({ detection }) => detection.label === "safety_vest");
+
+  const helmets = detections.filter(
+    (detection) => detection.label === "hard_hat"
+  );
+
+  return vests
+    .filter(({ detection }) => !hasHelmetAboveVest(detection, helmets))
+    .map(({ detection, index }) => ({
+      vestIndex: index,
+      vest: detection,
+    }));
+}
+
+function getScaledBBoxStyle(
+  detection: Detection,
+  video: HTMLVideoElement | null
+): React.CSSProperties {
+  if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+    return { display: "none" };
+  }
+
+  const displayWidth = video.clientWidth;
+  const displayHeight = video.clientHeight;
+
+  const scaleX = displayWidth / video.videoWidth;
+  const scaleY = displayHeight / video.videoHeight;
+
+  const x = detection.bbox.x1 * scaleX;
+  const y = detection.bbox.y1 * scaleY;
+  const width = (detection.bbox.x2 - detection.bbox.x1) * scaleX;
+  const height = (detection.bbox.y2 - detection.bbox.y1) * scaleY;
+
+  return {
+    position: "absolute",
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  };
+}
+
+
+
 export default function App() {
   const [stage, setStage] = useState<AppStage>("modeSelect");
   const [mode, setMode] = useState<AppMode>(null);
@@ -174,9 +261,13 @@ export default function App() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoOverlayRef = useRef<HTMLDivElement | null>(null);
   
   const [timerActive, setTimerActive] = useState(false);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
+
+  const [unsafeVestCountdownActive, setUnsafeVestCountdownActive] = useState(false);
+  const [unsafeVestCountdownSecondsLeft, setUnsafeVestCountdownSecondsLeft] = useState(5);
 
   const showMedicalCountdownWarning =
     mode === "medical" &&
@@ -187,6 +278,11 @@ export default function App() {
   const ppeOptions = useMemo(() => {
     return mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
   }, [mode]);
+
+  const unsafeVestMatches = useMemo(() => {
+    if (mode !== "hurricane") return [];
+    return getUnsafeVestMatches(lastDetections);
+  }, [mode, lastDetections]);
 
   useEffect(() => {
     setLiveConfidences(
@@ -313,7 +409,50 @@ export default function App() {
   }, 1000);
 
   return () => clearTimeout(timeout);
-}, [timerActive, timerSecondsLeft]);
+  }, [timerActive, timerSecondsLeft]);
+
+  useEffect(() => {
+  if (mode !== "hurricane") {
+    setUnsafeVestCountdownActive(false);
+    setUnsafeVestCountdownSecondsLeft(5);
+    return;
+  }
+
+  const hasUnsafeVest = unsafeVestMatches.length > 0;
+
+  if (!isCameraOn || !hasUnsafeVest) {
+    setUnsafeVestCountdownActive(false);
+    setUnsafeVestCountdownSecondsLeft(5);
+    return;
+  }
+
+  setUnsafeVestCountdownActive((prev) => {
+    if (!prev) {
+      setUnsafeVestCountdownSecondsLeft(5);
+      return true;
+    }
+    return prev;
+  });
+}, [mode, isCameraOn, unsafeVestMatches]);
+
+useEffect(() => {
+  if (!unsafeVestCountdownActive) return;
+  if (unsafeVestMatches.length === 0) return;
+
+  if (unsafeVestCountdownSecondsLeft <= 0) {
+    return;
+  }
+
+  const timeout = setTimeout(() => {
+    setUnsafeVestCountdownSecondsLeft((prev) => prev - 1);
+  }, 1000);
+
+  return () => clearTimeout(timeout);
+}, [
+  unsafeVestCountdownActive,
+  unsafeVestCountdownSecondsLeft,
+  unsafeVestMatches,
+]);
 
   const stopCamera = () => {
     cameraStream?.getTracks().forEach((track) => track.stop());
@@ -327,6 +466,8 @@ export default function App() {
     setVisionBusy(false);
     setTimerActive(false);
     setTimerSecondsLeft(0);
+    setUnsafeVestCountdownActive(false);
+  setUnsafeVestCountdownSecondsLeft(5);
   };
 
   const resetForNewRun = () => {
@@ -344,6 +485,8 @@ export default function App() {
     );
     setTimerActive(false);
     setTimerSecondsLeft(0);
+    setUnsafeVestCountdownActive(false);
+  setUnsafeVestCountdownSecondsLeft(5);
   };
 
   const handleSelectMode = (selectedMode: AppMode) => {
@@ -735,8 +878,7 @@ const handleCancelMedicalTimer = () => {
               Live Camera Detection
             </h2>
             <p className="mb-6 text-[#2E1F27]/75">
-              The live camera feed now calls the backend model route directly.
-              Final grading uses the new detect-and-grade API.
+              The live camera feed now calls the backend model route directly for live helmet detection.
             </p>
 
             {errorMessage && (
@@ -841,13 +983,46 @@ const handleCancelMedicalTimer = () => {
                         : "border-[#2E1F27]"
                     }`}
                   >
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="block w-full rounded-lg"
-                    />
+                    <div ref={videoOverlayRef} className="relative">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="block w-full rounded-lg"
+                      />
+
+                      {mode === "hurricane" && (
+                        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+                          {lastDetections.map((detection, index) => {
+                            const isUnsafeVest =
+                              detection.label === "safety_vest" &&
+                              unsafeVestMatches.some((match) => match.vestIndex === index);
+
+                            return (
+                              <div
+                                key={`${detection.label}-${index}`}
+                                style={getScaledBBoxStyle(detection, videoRef.current)}
+                                className={`border-2 shadow-[0_0_0_1px_rgba(0,0,0,0.35)] ${
+                                  isUnsafeVest ? "border-red-600" : "border-[#F5CB5C]"
+                                }`}
+                              >
+                                <div
+                                  className={`absolute left-0 top-0 -translate-y-full rounded-t-md px-2 py-1 text-xs font-bold ${
+                                    isUnsafeVest
+                                      ? "bg-red-600 text-white"
+                                      : "bg-[#F5CB5C] text-[#2E1F27]"
+                                  }`}
+                                >
+                                  {toDisplayLabel(detection.label)}{" "}
+                                  {Math.round(detection.confidence * 100)}%
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
 
                     {showMedicalCountdownWarning && (
                       <div className="pointer-events-none absolute inset-0 flex items-start justify-end p-4">
@@ -856,6 +1031,16 @@ const handleCancelMedicalTimer = () => {
                         </div>
                       </div>
                     )}
+
+                    {mode === "hurricane" &&
+                      unsafeVestCountdownActive &&
+                      unsafeVestMatches.length > 0 && (
+                        <div className="pointer-events-none absolute inset-0 flex items-start justify-start p-4">
+                          <div className="rounded-lg bg-red-600 px-4 py-2 text-lg font-bold text-white shadow-lg">
+                            Helmet needed: {unsafeVestCountdownSecondsLeft}s
+                          </div>
+                        </div>
+                      )}
                   </div>
                 )}
 
@@ -880,19 +1065,28 @@ const handleCancelMedicalTimer = () => {
                 
 
                 <div className="flex gap-3">
-                   {mode !== "hurricane" && (
-                      <button
-                        onClick={() => void handleSubmit()}
-                        disabled={submitting}
-                        className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
-                          submitting
-                            ? "cursor-not-allowed bg-[#2E1F27]/20"
-                            : "bg-[#F5CB5C] hover:brightness-95"
-                        }`}
-                      >
-                        {submitting ? "Processing..." : "Submit Image"}
-                      </button>
-                    )}
+                  {mode === "hurricane" && (
+                    <button
+                      onClick={handleRestart}
+                      className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
+                    >
+                      Restart
+                    </button>
+                  )}
+
+                  {mode !== "hurricane" && (
+                    <button
+                      onClick={() => void handleSubmit()}
+                      disabled={submitting}
+                      className={`rounded-xl border-2 border-[#2E1F27] px-4 py-2 font-medium transition ${
+                        submitting
+                          ? "cursor-not-allowed bg-[#2E1F27]/20"
+                          : "bg-[#F5CB5C] hover:brightness-95"
+                      }`}
+                    >
+                      {submitting ? "Processing..." : "Submit Image"}
+                    </button>
+                  )}
 
                   <button
                     onClick={handleBackToScenario}
