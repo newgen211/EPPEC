@@ -178,6 +178,12 @@ export default function App() {
   const [timerActive, setTimerActive] = useState(false);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
+  const showMedicalCountdownWarning =
+    mode === "medical" &&
+    isCameraOn &&
+    timerActive &&
+    timerSecondsLeft <= 10;
+
   const ppeOptions = useMemo(() => {
     return mode === "hurricane" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
   }, [mode]);
@@ -677,12 +683,12 @@ const handleCancelMedicalTimer = () => {
                 >
                   {medicalScenarios.map((scenario) => (
                     <option key={scenario.id} value={scenario.id}>
-                      {scenario.text}
+                      {scenario.category}
                     </option>
                   ))}
                   {aiScenario && (
                     <option value={AI_SCENARIO_OPTION_ID}>
-                      {aiScenario.text}
+                      AI Generated Scenario
                     </option>
                   )}
                 </select>
@@ -824,7 +830,13 @@ const handleCancelMedicalTimer = () => {
                 )}
 
                 {isCameraOn && (
-                  <div className="mb-4 rounded-xl border-2 border-[#2E1F27] bg-black p-2">
+                  <div
+                    className={`relative mb-4 rounded-xl border-2 bg-black p-2 transition-colors ${
+                      showMedicalCountdownWarning
+                        ? "border-red-600"
+                        : "border-[#2E1F27]"
+                    }`}
+                  >
                     <video
                       ref={videoRef}
                       autoPlay
@@ -832,6 +844,14 @@ const handleCancelMedicalTimer = () => {
                       muted
                       className="block w-full rounded-lg"
                     />
+
+                    {showMedicalCountdownWarning && (
+                      <div className="pointer-events-none absolute inset-0 flex items-start justify-end p-4">
+                        <div className="rounded-lg bg-red-600 px-4 py-2 text-lg font-bold text-white shadow-lg">
+                          {timerSecondsLeft}s
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
