@@ -270,6 +270,7 @@ export default function App() {
   const [unsafeVestCountdownSecondsLeft, setUnsafeVestCountdownSecondsLeft] = useState(5);
 
   const [flashActive, setFlashActive] = useState(false);
+  const [mustLeaveOverlay, setMustLeaveOverlay] = useState(false);
 
   const showMedicalCountdownWarning =
     mode === "medical" &&
@@ -442,6 +443,8 @@ useEffect(() => {
   if (unsafeVestMatches.length === 0) return;
 
   if (unsafeVestCountdownSecondsLeft <= 0) {
+    setUnsafeVestCountdownActive(false);
+    setMustLeaveOverlay(true);
     return;
   }
 
@@ -470,10 +473,12 @@ useEffect(() => {
     setTimerSecondsLeft(0);
     setUnsafeVestCountdownActive(false);
   setUnsafeVestCountdownSecondsLeft(5);
+  setMustLeaveOverlay(false);
   };
 
   const resetForNewRun = () => {
     stopCamera();
+    setMustLeaveOverlay(false);
     setUploadedImage(null);
     setResult(null);
     setErrorMessage(null);
@@ -545,6 +550,7 @@ const handleSelectMode = (selectedMode: AppMode) => {
   };
 
   const handleBackToScenario = () => {
+    setMustLeaveOverlay(false);
     stopCamera();
     setUploadedImage(null);
     setResult(null);
@@ -761,7 +767,21 @@ const handleCancelMedicalTimer = () => {
           </p>
         </div>
       </header>
-
+        {mustLeaveOverlay && (
+  <div className="fixed inset-0 z-40 flex items-center justify-center bg-black">
+    <div className="px-6 text-center text-white">
+      <h2 className="text-4xl font-bold">You need to leave</h2>
+    </div>
+  </div>
+)}
+{mustLeaveOverlay && (
+  <button
+    onClick={handleRestart}
+    className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-xl border-2 border-white bg-[#F5CB5C] px-6 py-3 font-medium text-[#2E1F27] transition hover:brightness-95"
+  >
+    Restart
+  </button>
+)}
       <main className="mx-auto max-w-5xl px-6 py-8">
         {stage === "modeSelect" && (
           <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
@@ -1086,7 +1106,7 @@ const handleCancelMedicalTimer = () => {
                 
 
                 <div className="flex gap-3">
-                  {mode === "hurricane" && (
+                  {mode === "hurricane" && !mustLeaveOverlay && (
                     <button
                       onClick={handleRestart}
                       className="rounded-xl border-2 border-[#2E1F27] bg-[#F5CB5C] px-4 py-2 font-medium transition hover:brightness-95"
