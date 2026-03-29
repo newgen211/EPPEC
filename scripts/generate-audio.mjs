@@ -99,7 +99,27 @@ const PHRASES = {
 
   // ── Generic UI ───────────────────────────────────────
   "scenario-selected":
-    "Scenario selected. Read the briefing, then proceed to the camera.",
+    "Scenario selected. Read the briefing and start the camera.",
+
+  // ── Scenario briefings (read aloud on Start PPE Challenge) ──
+  // Format: intro + scenario text + action prompt
+  "scenario-briefing-hurricane":
+    "Scenario selected. A responder is entering a flood-damaged area with contaminated standing water, debris, unstable surfaces, and possible exposure to mold and sharp objects. Put on your PPE and open the camera when ready.",
+
+  "scenario-briefing-1":
+    "Scenario selected. Routine blood draw on a stable patient. Put on your PPE and open the camera when ready.",
+
+  "scenario-briefing-2":
+    "Scenario selected. Patient presenting with fever and productive cough — suspected influenza. Put on your PPE and open the camera when ready.",
+
+  "scenario-briefing-3":
+    "Scenario selected. Entering an isolation room for a patient with C. diff infection. Put on your PPE and open the camera when ready.",
+
+  "scenario-briefing-4":
+    "Scenario selected. Suspected tuberculosis — patient has persistent cough and night sweats. Put on your PPE and open the camera when ready.",
+
+  "scenario-briefing-5":
+    "Scenario selected. Emergency intubation on an unknown-status patient with high aerosolization risk. Put on your PPE and open the camera when ready.",
 };
 
 // ── ElevenLabs TTS fetch ──────────────────────────────────
