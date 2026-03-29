@@ -20,8 +20,8 @@ MEDICAL_LABEL_MAP: dict[str, str] = {
     "Face_Shields": "face_shield",
     "Gloves":     "gloves",
     "Glovess":    "gloves",
-    "Goggles":    "goggles",
-    "Goggless":   "goggles",
+    "Goggles":    "eye_protection",
+    "Goggless":   "eye_protection",
     "Mask":       "mask",
     "Masks":      "mask",
 }
