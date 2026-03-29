@@ -760,10 +760,10 @@ const handleCancelMedicalTimer = () => {
       <header className="border-b-4 border-[#2E1F27] bg-[#4059AD] px-6 py-5">
         <div className="mx-auto max-w-5xl">
           <h1 className="text-3xl font-bold text-[#E2CFEA]">
-            PPE Scenario Classifier
+            EPPEC 
           </h1>
           <p className="mt-1 text-sm text-[#E2CFEA]/90">
-            Emergency responder PPE verification and training
+            Employee Personal Protection Equipment Checker
           </p>
         </div>
       </header>
@@ -825,7 +825,7 @@ const handleCancelMedicalTimer = () => {
                     handleSelectMode("medical");
                   }
                 }}
-                className={`rounded-2xl border-2 bg-[#E2CFEA] p-5 transition ${
+                className={`rounded-2xl border-2 bg-[#bg-[#2E1F27]] p-5 transition ${
                   loadingScenarios || loadingAiScenario
                     ? "cursor-not-allowed border-[#2E1F27] opacity-50"
                     : "cursor-pointer border-[#2E1F27] hover:border-[#419D78]"
