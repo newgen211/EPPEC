@@ -1,3 +1,5 @@
+// File: frontend/src/App.tsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   detectUpload,
