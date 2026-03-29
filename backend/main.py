@@ -1,30 +1,16 @@
-# File: backend/main.py
-import os
-from dotenv import load_dotenv
-load_dotenv()  # must be before everything else
-
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+import base64
+
+from test_detector import run_detection as test_run_detection
+from detector import run_detection as app_run_detection
+
 from pydantic import BaseModel
 from classifier import classify, warm_cache, generate_scenario
 from scenarios import get_all, get_by_id
 from ppe_rules import grade
-from detector import run_detection
 
-
-load_dotenv()
-
-# ── Startup ───────────────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    warm_cache()
-    yield
-
-# ── App ───────────────────────────────────────────────────
-
-app = FastAPI(title="EPPEC API", lifespan=lifespan)
+app = FastAPI(title="EPPEC API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,7 +19,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Request bodies ────────────────────────────────────────
+@app.get("/")
+def root():
+    return {"ok": True, "message": "EPPEC backend running"}
+
+@app.post("/test-detect")
+async def test_detect(file: UploadFile = File(...), model_type: str = Form(...)):
+    if model_type not in ["construction", "medical"]:
+        return {
+            "error": f"Invalid model_type: {model_type}. Must be 'construction' or 'medical'"
+        }
+
+    try:
+        image_bytes = await file.read()
+        result = test_run_detection(image_bytes, model_type)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.websocket("/ws/detect")
+async def websocket_detect(websocket: WebSocket):
+    await websocket.accept()
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+
+            message_type = data.get("type")
+            if message_type != "frame":
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"Unsupported message type: {message_type}"
+                })
+                continue
+
+            frame_id = data.get("frame_id")
+            model_type = data.get("model_type")
+            image_b64 = data.get("image")
+
+            if model_type not in ["construction", "medical"]:
+                await websocket.send_json({
+                    "type": "error",
+                    "frame_id": frame_id,
+                    "error": f"Invalid model_type: {model_type}"
+                })
+                continue
+
+            try:
+                image_bytes = base64.b64decode(image_b64)
+                result = test_run_detection(image_bytes, model_type)
+                result["type"] = "detection_result"
+                result["frame_id"] = frame_id
+                await websocket.send_json(result)
+            except Exception as e:
+                await websocket.send_json({
+                    "type": "error",
+                    "frame_id": frame_id,
+                    "error": str(e)
+                })
+
+    except WebSocketDisconnect:
+        print("[WS] Client disconnected")
 
 class ClassifyRequest(BaseModel):
     text: str
@@ -43,11 +89,6 @@ class SubmitRequest(BaseModel):
     selected: list[str]
 
 # ── Routes ────────────────────────────────────────────────
-
-@app.get("/")
-def root():
-    return {"ok": True, "message": "EPPEC backend running"}
-
 
 @app.get("/scenarios")
 def scenarios():
@@ -104,7 +145,7 @@ async def detect_upload(
     model_type: str = "medical"
 ):
     image_bytes = await file.read()
-    return run_detection(image_bytes, model_type)
+    return test_run_detection(image_bytes, model_type)
     
 # ── Combined detection and grading route ────────────────────────────────
 @app.post("/detect-and-grade")
@@ -117,7 +158,7 @@ async def detect_and_grade(
         raise HTTPException(status_code=400, detail="scenario_text cannot be empty")
 
     image_bytes    = await file.read()
-    detection      = run_detection(image_bytes, model_type)
+    detection      = test_run_detection(image_bytes, model_type)
     classification = classify(scenario_text)
     detected_labels = [d["label"] for d in detection["detections"]]
     result         = grade(classification["required"], detected_labels)
