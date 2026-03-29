@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import base64
 
