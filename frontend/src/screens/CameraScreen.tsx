@@ -18,7 +18,8 @@ interface CameraScreenProps {
   liveConfidences: DetectionConfidence[];
   lastDetections: Detection[];
   videoRef: React.RefObject<HTMLVideoElement>;
-  canvasRef: React.RefObject<HTMLCanvasElement>;
+  overlayCanvasRef: React.RefObject<HTMLCanvasElement>;
+  captureCanvasRef: React.RefObject<HTMLCanvasElement>;
   onBack: () => void;
   onImageChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onStartCamera: () => void;
@@ -44,7 +45,8 @@ export default function CameraScreen({
   liveConfidences,
   lastDetections,
   videoRef,
-  canvasRef,
+  overlayCanvasRef,
+  captureCanvasRef,
   onBack,
   onImageChange,
   onStartCamera,
@@ -59,7 +61,7 @@ export default function CameraScreen({
     <div className="rounded-2xl border-2 border-[#2E1F27] bg-[#E2CFEA] p-6 shadow-sm">
       <div className="mb-2 text-sm font-medium uppercase tracking-wide text-[#4059AD]">
         {mode === "construction"
-          ? "General PPE for Hurricane Flood Response"
+          ? "Construction PPE"
           : "Medical PPE"}
       </div>
 
@@ -126,9 +128,7 @@ export default function CameraScreen({
 
           {mode === "medical" && (
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border-2 border-[#2E1F27] bg-white p-4">
-              <div className="font-medium">
-                Timer: {timerSecondsLeft}s
-              </div>
+              <div className="font-medium">Timer: {timerSecondsLeft}s</div>
 
               {!timerActive ? (
                 <button
@@ -159,9 +159,10 @@ export default function CameraScreen({
                   className="absolute inset-0 h-full w-full object-cover"
                 />
                 <canvas
-                  ref={canvasRef}
+                  ref={overlayCanvasRef}
                   className="pointer-events-none absolute inset-0 h-full w-full"
                 />
+                <canvas ref={captureCanvasRef} className="hidden" />
               </div>
             ) : previewUrl ? (
               <img

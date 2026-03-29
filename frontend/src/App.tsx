@@ -23,13 +23,14 @@ import {
   MEDICAL_PPE_OPTIONS,
 } from "./utils/labels";
 import { getMedicalTimerSeconds } from "./utils/timer";
+import { createDetectionSocket } from "./utils/liveDetectionSocket";
 
 const AI_SCENARIO_OPTION_ID = -1;
 
 const CONSTRUCTION_SCENARIO: BackendScenario = {
   id: 1000,
-  text: "A construction worker is entering a site with potential hazards.",
-  category: "Construction Response",
+  text: "A responder is entering a flood-damaged area with contaminated standing water, debris, unstable surfaces, and possible exposure to mold and sharp objects.",
+  category: "Flood Response",
 };
 
 const FALLBACK_MEDICAL_SCENARIOS: BackendScenario[] = [
@@ -90,11 +91,22 @@ export default function App() {
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const frameIdRef = useRef(0);
+  const lastProcessedFrameRef = useRef(-1);
+  const sendIntervalRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
 
   const ppeOptions = useMemo(() => {
-    return mode === "construction" ? CONSTRUCTION_PPE_OPTIONS : MEDICAL_PPE_OPTIONS;
+    if (mode === "construction") return CONSTRUCTION_PPE_OPTIONS;
+    return MEDICAL_PPE_OPTIONS;
   }, [mode]);
+
+  const activeModelType: "construction" | "medical" =
+    mode === "construction" ? "construction" : "medical";
 
   useEffect(() => {
     setLiveConfidences(
@@ -174,25 +186,95 @@ export default function App() {
   }, [timerActive, timerSecondsLeft]);
 
   useEffect(() => {
-    if (!isCameraOn) return;
+    if (!isCameraOn || !cameraStream) return;
 
-    const intervalId = window.setInterval(() => {
-      void sendLiveFrameForDetection();
-    }, 1200);
+    startLiveSocketLoop();
 
-    return () => window.clearInterval(intervalId);
-  }, [isCameraOn, mode, uploadedImage, selectedScenario, visionBusy]);
+    return () => {
+      stopLiveSocketLoop();
+    };
+  }, [isCameraOn, cameraStream, activeModelType]);
+
+  useEffect(() => {
+    return () => {
+      stopLiveSocketLoop();
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
       }
-      if (cameraStream) {
-        cameraStream.getTracks().forEach((track) => track.stop());
-      }
     };
-  }, [previewUrl, cameraStream]);
+  }, [previewUrl]);
+
+  const clearOverlay = () => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const drawBoundingBoxes = (
+    detections: Detection[],
+    imageSize: [number, number],
+  ) => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const displayWidth = Math.max(1, Math.round(rect.width));
+    const displayHeight = Math.max(1, Math.round(rect.height));
+
+    if (canvas.width !== displayWidth) canvas.width = displayWidth;
+    if (canvas.height !== displayHeight) canvas.height = displayHeight;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const [imgWidth, imgHeight] = imageSize;
+    if (!imgWidth || !imgHeight) return;
+
+    const scaleX = canvas.width / imgWidth;
+    const scaleY = canvas.height / imgHeight;
+
+    for (const det of detections) {
+      const x1 = det.bbox.x1 * scaleX;
+      const y1 = det.bbox.y1 * scaleY;
+      const x2 = det.bbox.x2 * scaleX;
+      const y2 = det.bbox.y2 * scaleY;
+
+      const width = x2 - x1;
+      const height = y2 - y1;
+      const conf = det.confidence;
+
+      const hue = conf > 0.8 ? 120 : conf > 0.5 ? 50 : 0;
+      const stroke = `hsl(${hue}, 100%, 50%)`;
+      const fill = `hsla(${hue}, 100%, 45%, 0.9)`;
+
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x1, y1, width, height);
+
+      const label = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
+      ctx.font = "bold 14px Arial";
+      const textWidth = ctx.measureText(label).width;
+      const textX = x1;
+      const textY = Math.max(20, y1 - 8);
+
+      ctx.fillStyle = fill;
+      ctx.fillRect(textX, textY - 18, textWidth + 10, 20);
+
+      ctx.fillStyle = "white";
+      ctx.fillText(label, textX + 5, textY - 4);
+    }
+  };
 
   const resetForNewRun = () => {
     stopCamera();
@@ -205,6 +287,7 @@ export default function App() {
     setVisionBusy(false);
     setTimerActive(false);
     setTimerSecondsLeft(0);
+    clearOverlay();
     setLiveConfidences(
       ppeOptions.map((item) => ({
         item,
@@ -261,6 +344,7 @@ export default function App() {
     setErrorMessage(null);
     setLastDetections([]);
     setVisionOnline(false);
+    clearOverlay();
     setLiveConfidences(
       ppeOptions.map((item) => ({
         item,
@@ -297,31 +381,168 @@ export default function App() {
       setCameraStream(stream);
       setIsCameraOn(true);
       setVisionOnline(false);
+      setVisionBusy(false);
       setErrorMessage(null);
+      clearOverlay();
     } catch (error) {
       console.error(error);
       setErrorMessage("Unable to access the camera. Please allow camera permissions.");
     }
   };
 
+  const stopLiveSocketLoop = () => {
+    if (sendIntervalRef.current !== null) {
+      window.clearInterval(sendIntervalRef.current);
+      sendIntervalRef.current = null;
+    }
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    inFlightRef.current = false;
+    frameIdRef.current = 0;
+    lastProcessedFrameRef.current = -1;
+  };
+
+  const connectLiveSocket = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+
+    const ws = createDetectionSocket();
+
+    ws.onopen = () => {
+      console.log("[WS] Connected");
+      setVisionOnline(true);
+      setErrorMessage(null);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "error") {
+          console.error("[WS] Backend error:", data.error);
+          setErrorMessage(data.error);
+          return;
+        }
+
+        if (data.type !== "detection_result") return;
+
+        const frameId = data.frame_id ?? -1;
+        if (frameId < lastProcessedFrameRef.current) {
+          return;
+        }
+
+        lastProcessedFrameRef.current = frameId;
+
+        setLastDetections(data.detections);
+        setLiveConfidences(
+          normalizeDetectionsToConfidence(data.detections, ppeOptions),
+        );
+        drawBoundingBoxes(data.detections, data.image_size);
+        setVisionOnline(true);
+      } catch (error) {
+        console.error("[WS] Failed to parse message:", error);
+      } finally {
+        inFlightRef.current = false;
+        setVisionBusy(false);
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.error("[WS] Socket error:", event);
+      setVisionOnline(false);
+      setVisionBusy(false);
+      inFlightRef.current = false;
+    };
+
+    ws.onclose = () => {
+      console.log("[WS] Closed");
+      setVisionOnline(false);
+      setVisionBusy(false);
+      wsRef.current = null;
+      inFlightRef.current = false;
+    };
+
+    wsRef.current = ws;
+  };
+
+  const captureFrameBase64 = async (): Promise<string | null> => {
+    if (!videoRef.current || !captureCanvasRef.current) return null;
+
+    const video = videoRef.current;
+    const canvas = captureCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) return null;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+
+    const targetWidth = 640;
+    const targetHeight = 480;
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+    return dataUrl.split(",")[1] ?? null;
+  };
+
+  const startLiveSocketLoop = () => {
+    stopLiveSocketLoop();
+    connectLiveSocket();
+
+    const SEND_INTERVAL = 350;
+
+    sendIntervalRef.current = window.setInterval(async () => {
+      if (!isCameraOn) return;
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (inFlightRef.current) return;
+
+      const imageBase64 = await captureFrameBase64();
+      if (!imageBase64) return;
+
+      const frameId = ++frameIdRef.current;
+
+      inFlightRef.current = true;
+      setVisionBusy(true);
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "frame",
+          frame_id: frameId,
+          model_type: activeModelType,
+          image: imageBase64,
+        }),
+      );
+    }, SEND_INTERVAL);
+  };
+
   const stopCamera = () => {
+    stopLiveSocketLoop();
+
     if (cameraStream) {
       cameraStream.getTracks().forEach((track) => track.stop());
     }
 
     setCameraStream(null);
     setIsCameraOn(false);
+    setVisionOnline(false);
+    setVisionBusy(false);
 
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+
+    clearOverlay();
   };
 
   const capturePhotoFile = async (): Promise<File | null> => {
-    if (!videoRef.current || !canvasRef.current) return null;
+    if (!videoRef.current || !captureCanvasRef.current) return null;
 
     const video = videoRef.current;
-    const canvas = canvasRef.current;
+    const canvas = captureCanvasRef.current;
     const context = canvas.getContext("2d");
 
     if (!context) return null;
@@ -374,45 +595,17 @@ export default function App() {
     setTimerSecondsLeft(0);
   };
 
-  const sendLiveFrameForDetection = async () => {
-    if (visionBusy) return;
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const file = await capturePhotoFile();
-    if (!file) return;
-
-    const modelType = mode === "construction" ? "construction" : "medical";
-
-    try {
-      setVisionBusy(true);
-      const response = await detectUpload(file, modelType);
-
-      setLastDetections(response.detections);
-      setLiveConfidences(
-        normalizeDetectionsToConfidence(response.detections, ppeOptions),
-      );
-      setVisionOnline(true);
-    } catch (error) {
-      console.error(error);
-      setVisionOnline(false);
-    } finally {
-      setVisionBusy(false);
-    }
-  };
-
   const handleRunUploadDetection = async () => {
     if (!uploadedImage) {
       setErrorMessage("Please upload or capture an image first.");
       return;
     }
 
-    const modelType = mode === "construction" ? "construction" : "medical";
-
     try {
       setErrorMessage(null);
       setVisionBusy(true);
 
-      const response = await detectUpload(uploadedImage, modelType);
+      const response = await detectUpload(uploadedImage, activeModelType);
 
       setLastDetections(response.detections);
       setLiveConfidences(
@@ -438,15 +631,13 @@ export default function App() {
       return;
     }
 
-    const modelType = mode === "construction" ? "construction" : "medical";
-
     try {
       setSubmitting(true);
       setErrorMessage(null);
 
       const response = await detectAndGrade(
         uploadedImage,
-        modelType,
+        activeModelType,
         selectedScenario.text,
       );
 
@@ -514,8 +705,9 @@ export default function App() {
             visionBusy={visionBusy}
             liveConfidences={liveConfidences}
             lastDetections={lastDetections}
-            videoRef={videoRef}
-            canvasRef={canvasRef}
+            videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+            overlayCanvasRef={overlayCanvasRef as React.RefObject<HTMLCanvasElement>}
+            captureCanvasRef={captureCanvasRef as React.RefObject<HTMLCanvasElement>}
             onBack={handleBackToScenario}
             onImageChange={handleImageChange}
             onStartCamera={startCamera}
