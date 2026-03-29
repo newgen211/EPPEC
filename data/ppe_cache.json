@@ -44,5 +44,15 @@
       "Eye Protection"
     ],
     "explanation": "Highest level of protection required \u2014 full PPE including face shield prevents splash and aerosol exposure in an emergency high-risk setting."
+  },
+  "A patient in the ICU with acute respiratory distress syndrome is undergoing an open tracheal suctioning procedure due to copious, thick secretions and declining oxygen saturation.": {
+    "category": "Airborne",
+    "required": [
+      "Gloves",
+      "Coverall",
+      "Mask",
+      "Eye Protection"
+    ],
+    "explanation": "Airborne precautions required \u2014 an N95 or higher-grade mask is mandatory because this pathogen spreads via small airborne particles that remain suspended in the air."
   }
 }
